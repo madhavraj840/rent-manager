@@ -86,3 +86,13 @@ export function FormError({ state, fields = [] }: { state?: FormState; fields?: 
   if (!state?.error || (state.field && fields.includes(state.field))) return null;
   return <p role="alert" className="rounded-md bg-overdue-soft px-3 py-2 text-sm font-medium text-overdue">{state.error}</p>;
 }
+
+// C-5: "What happens when you save" box above a money form's save button.
+export function Outcome({ children }: { children: ReactNode }) {
+  return (
+    <div className="rounded-md border border-line bg-surface-2 px-3 py-2 text-sm">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-fg-2">What happens when you save</p>
+      <div className="mt-0.5">{children}</div>
+    </div>
+  );
+}

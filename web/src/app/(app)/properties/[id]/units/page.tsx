@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadPortfolio } from "@/server/queries";
-import { PageHeader } from "@/components/ui";
+import { Crumbs, PageHeader } from "@/components/ui";
 import { UnitsForm } from "./units-form";
 
 export const metadata: Metadata = { title: "Add units" };
@@ -16,7 +15,7 @@ export default async function AddUnitsPage({ params }: PageProps<"/properties/[i
   const existing = units.filter((u) => u.propertyId === p.id).map((u) => u.label.toLowerCase());
   return (
     <div className="mx-auto max-w-2xl">
-      <p className="mb-1 text-sm"><Link href={`/properties/${p.id}`} className="text-fg-2 hover:text-fg">{p.name}</Link></p>
+      <Crumbs items={[["Properties", "/properties"], [p.name, `/properties/${p.id}`], ["Add units"]]} />
       <PageHeader title="Add units" sub="A unit is anything rented separately: a flat, a room or a bed." />
       <UnitsForm propertyId={p.id} currency={p.currency} existing={existing} />
     </div>

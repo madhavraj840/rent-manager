@@ -7,7 +7,7 @@ import {
 import { addDays, currencyDigits, formatMoney } from "@/lib/money";
 import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, METHODS, PAY_METHODS } from "@/lib/labels";
 import { DialogForm } from "./dialog-form";
-import { Field, Input, MoneyInput, Select } from "./form";
+import { Field, Input, MoneyInput, Outcome, Select } from "./form";
 
 export interface PaymentContext {
   tenancyId: string;
@@ -36,7 +36,7 @@ const btn = {
 export function RecordPayment({ p, compact }: { p: PaymentContext; compact?: boolean }) {
   return (
     <DialogForm
-      trigger={compact ? "Record" : "Record payment"}
+      trigger="Record payment"
       triggerClass={compact ? btn.compact : btn.primary}
       title={p.title}
       subtitle={<>Due now {formatMoney(p.due, p.currency, p.locale)}{p.overdue > 0 && <span className="text-overdue"> (overdue {formatMoney(p.overdue, p.currency, p.locale)})</span>}</>}
@@ -69,8 +69,7 @@ function PaymentFields({ p, state }: { p: PaymentContext; state: Parameters<type
 
   return (
     <>
-      <Field label="Towards rent & charges" name="rent" state={state}
-        hint={rentMinor > 0 && <>{clears.length > 0 && `Clears ${clears.join(", ")}.`}{pool > 0 && <span className="block">{fmt(pool)} will be kept as advance.</span>}</>}>
+      <Field label="Towards rent & charges" name="rent" state={state}>
         <MoneyInput name="rent" state={state} currency={p.currency} value={rent} onChange={(e) => setRent(e.target.value)} />
       </Field>
       {p.depositDue > 0 && (
@@ -100,6 +99,15 @@ function PaymentFields({ p, state }: { p: PaymentContext; state: Parameters<type
       <Field label="Note (optional)" name="note">
         <Input name="note" maxLength={500} />
       </Field>
+      <Outcome>
+        {rentMinor > 0 ? (
+          <>
+            {clears.length > 0 && <span className="block">Clears {clears.join(", ")}.</span>}
+            {pool > 0 && <span className="block">{fmt(pool)} is kept as advance for the next rent.</span>}
+          </>
+        ) : p.depositDue > 0 ? <span className="block">Only the deposit amount is recorded.</span> : null}
+        <span className="block text-fg-2">A receipt number is given. The payment shows under Payments and charges for {p.title}.</span>
+      </Outcome>
     </>
   );
 }
@@ -147,6 +155,7 @@ function ChargeFields({ p, state }: { p: PaymentContext; state: Parameters<typeo
           <Input type="date" name="dueDate" state={state} defaultValue={addDays(p.today, p.graceDays)} required />
         </Field>
       </div>
+      <Outcome>The amount is added to what {p.title} owes and shows under Payments and charges. It counts as overdue after the due date.</Outcome>
     </>
   );
 }
@@ -176,6 +185,7 @@ export function AddCredit({ p }: { p: PaymentContext }) {
           <Field label="Reason" name="reason" state={state}>
             <Input name="reason" state={state} maxLength={200} placeholder="e.g. Plumbing repair paid by tenant" required />
           </Field>
+          <Outcome>What {p.title} owes goes down by this amount, oldest dues first. It shows under Payments and charges. No receipt is given.</Outcome>
         </>
       )}
     </DialogForm>

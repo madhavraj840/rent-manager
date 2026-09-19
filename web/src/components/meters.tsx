@@ -5,7 +5,7 @@ import type { Ctx } from "@/server/commands";
 import type { MeterView } from "@/server/queries";
 import { METER_TYPES, UOMS } from "@/lib/labels";
 import { MeterDialog, RecordReading, type ReadingContext } from "./meter-actions";
-import { Card, Empty, LOCALE, buttonClass, longDate } from "./ui";
+import { Card, Empty, LOCALE, buttonClass, linkClass, longDate } from "./ui";
 
 export function readingContext(mv: MeterView, ctx: Ctx): ReadingContext {
   const m = mv.meter;
@@ -36,12 +36,12 @@ export function MetersCard({ list, ctx, property, units, unitId, roundHref }: {
   return (
     <Card title={`Meters (${list.length})`} action={
       <span className="flex gap-2">
-        {roundHref && list.length > 1 && <Link href={roundHref} className={buttonClass.secondary}>Readings round</Link>}
+        {roundHref && list.length > 1 && <Link href={roundHref} className={buttonClass.secondary}>Enter all readings</Link>}
         <MeterDialog propertyId={property.id} currency={property.currency} units={units} unitId={unitId} />
       </span>
     }>
       {!list.length ? (
-        <Empty>No meters. Add one to bill electricity or water by reading.</Empty>
+        <Empty>No meters yet. Use <span className="font-medium text-fg">Add meter</span> above to bill electricity or water by reading.</Empty>
       ) : (
         <ul className="divide-y divide-line text-sm">
           {list.map((mv) => {
@@ -50,12 +50,12 @@ export function MetersCard({ list, ctx, property, units, unitId, roundHref }: {
             return (
               <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
                 <div className="min-w-0 flex-1">
-                  <Link href={`/meters/${m.id}`} className="font-medium hover:underline">
+                  <Link href={`/meters/${m.id}`} className={linkClass}>
                     {!unitId && `${mv.unit?.label ?? "Common"} · `}{m.label}
                   </Link>
                   <span className="text-fg-2"> · {METER_TYPES[m.type as keyof typeof METER_TYPES]} · {rateLabel(m.rate, m.currency)}/{u}</span>
                   <div className="num text-[13px] text-fg-2">
-                    {mv.last ? `Last ${Number(mv.last.value).toLocaleString(LOCALE)} ${u} on ${longDate(mv.last.readingDate)}` : "No readings yet"}
+                    {mv.last ? `Previous reading ${Number(mv.last.value).toLocaleString(LOCALE)} ${u} on ${longDate(mv.last.readingDate)}` : "No readings yet"}
                     {!unitId && mv.view && ` · ${mv.view.people[0]?.fullName}`}
                   </div>
                 </div>

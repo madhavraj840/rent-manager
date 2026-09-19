@@ -45,9 +45,9 @@ export function RoundForm({ rows, today, backHref }: { rows: ReadingContext[]; t
             <tr>
               <th className="px-4 py-2.5 font-medium">Meter</th>
               <th className="px-4 py-2.5 font-medium">Tenant</th>
-              <th className="px-4 py-2.5 text-right font-medium">Last reading</th>
-              <th className="px-4 py-2.5 font-medium">New reading</th>
-              <th className="px-4 py-2.5 text-right font-medium">Used</th>
+              <th className="px-4 py-2.5 text-right font-medium">Previous reading</th>
+              <th className="px-4 py-2.5 font-medium">Current reading</th>
+              <th className="px-4 py-2.5 text-right font-medium">Units used</th>
               <th className="px-4 py-2.5 text-right font-medium">Bill</th>
             </tr>
           </thead>
@@ -59,16 +59,16 @@ export function RoundForm({ rows, today, backHref }: { rows: ReadingContext[]; t
               return (
                 <tr key={r.meterId} className={err || bad ? "bg-overdue-soft" : ""}>
                   <td className="px-4 py-2.5 font-medium">{r.title}</td>
-                  <td className="px-4 py-2.5 text-fg-2">{r.tenant?.name ?? "Vacant"}</td>
+                  <td className="px-4 py-2.5 text-fg-2">{r.tenant?.name ?? "Vacant · not billed"}</td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-right text-fg-2">{r.last ? <>{Number(r.last.value).toLocaleString(r.locale)}<span className="block text-[12px]">{r.last.date}</span></> : "—"}</td>
                   <td className="px-4 py-2.5">
-                    <input name={`v_${r.meterId}`} aria-label={`New reading for ${r.title}`} inputMode="decimal" autoComplete="off"
+                    <input name={`v_${r.meterId}`} aria-label={`Current reading for ${r.title}`} inputMode="decimal" autoComplete="off"
                       value={values[r.meterId] ?? ""} onChange={(e) => setValues((vs) => ({ ...vs, [r.meterId]: e.target.value }))}
                       aria-invalid={!!err || bad || undefined}
                       className="h-9 w-32 rounded-md border border-line-strong bg-surface px-2.5 text-right aria-[invalid=true]:border-overdue" />
                     {err && <span className="mt-1 block max-w-64 text-[12px] font-medium text-overdue">{err}</span>}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-right">{used !== null ? (bad ? <span className="text-overdue">Lower than last</span> : `${formatScaled(used, 3)} ${u}`) : "—"}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right">{used !== null ? (bad ? <span className="text-overdue">Lower than previous</span> : `${formatScaled(used, 3)} ${u}`) : "—"}</td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-right font-medium">
                     {amount > 0 ? formatMoney(amount, r.currency, r.locale) : r.tenant && !r.prev && values[r.meterId] ? <span className="font-normal text-fg-2">Starting reading</span> : "—"}
                   </td>
@@ -80,7 +80,7 @@ export function RoundForm({ rows, today, backHref }: { rows: ReadingContext[]; t
       </div>
       <div className="flex flex-wrap items-center justify-end gap-3">
         <span className="num text-sm text-fg-2">
-          {entered} of {rows.length} entered{totals.size > 0 && ` · ${[...totals].map(([c, n]) => formatMoney(n, c)).join(" + ")} to bill`}
+          {entered} of {rows.length} entered{totals.size > 0 && ` · ${[...totals].map(([c, n]) => formatMoney(n, c)).join(" + ")} will be added to tenants' balances`}
         </span>
         <Link href={backHref} className="h-10 rounded-md px-4 text-sm font-medium leading-10 text-fg-2 hover:bg-surface-2">Done</Link>
         <Submit pending={pending}>Save {entered || ""} {entered === 1 ? "reading" : "readings"}</Submit>

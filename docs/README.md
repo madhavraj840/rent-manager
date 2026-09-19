@@ -26,6 +26,7 @@ The single source of truth for building the **Android app + website + backend + 
 | 17 | [Traceability](17_REQUIREMENT_TRACEABILITY.md) | Requirement → … → test |
 | 18 | [Edge Cases](18_EDGE_CASES.md) | Unusual situations and expected behaviour |
 | 19 | [Architecture Review](19_ARCHITECTURE_REVIEW.md) | Consistency check and **critical issues before development** |
+| 20 | [UI Clarity Guide](20_UI_CLARITY_GUIDE.md) | How every screen explains itself: links, breadcrumbs, "what happens when you save" |
 
 All documents are version 0.1, status Draft, awaiting owner review.
 

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { loadPortfolio } from "@/server/queries";
-import { Card, Empty, PageHeader, TenancyStatus, buttonClass, money } from "@/components/ui";
+import { Card, Chevron, Empty, PageHeader, TenancyStatus, buttonClass, linkClass, money } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Tenants" };
 
@@ -46,21 +46,23 @@ export default async function TenantsPage({ searchParams }: PageProps<"/tenants"
                   <th className="px-4 py-2.5 font-medium max-md:hidden">Phone</th>
                   <th className="px-4 py-2.5 text-right font-medium">Balance</th>
                   <th className="px-4 py-2.5 font-medium max-sm:hidden"><span className="sr-only">Status</span></th>
+                  <th className="w-8"><span className="sr-only">Open</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {rows.map(({ t, v }) => (
-                  <tr key={t.id} className="hover:bg-surface-2">
+                  <tr key={t.id} className="relative hover:bg-surface-2">
                     <td className="px-4 py-3 font-medium">
-                      <Link href={`/tenancies/${v.tenancy.id}`} className="hover:underline">{t.fullName}</Link>
+                      <Link href={`/tenancies/${v.tenancy.id}`} className="after:absolute after:inset-0 hover:underline">{t.fullName}</Link>
                     </td>
                     <td className="px-4 py-3">
                       {v.unit.label}
-                      <div className="text-[13px] text-fg-2">{v.property.name}</div>
+                      <div className="text-[13px]"><Link href={`/properties/${v.property.id}`} className={`relative ${linkClass}`}>{v.property.name}</Link></div>
                     </td>
                     <td className="num px-4 py-3 text-fg-2 max-md:hidden">{t.phone}</td>
                     <td className="num px-4 py-3 text-right">{v.balance.balance > 0 ? money(v.balance.balance, v.tenancy.currency) : "—"}</td>
                     <td className="px-4 py-3 max-sm:hidden"><TenancyStatus v={v} /></td>
+                    <td className="pr-3"><Chevron /></td>
                   </tr>
                 ))}
               </tbody>

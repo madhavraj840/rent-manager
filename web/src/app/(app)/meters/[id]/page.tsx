@@ -7,7 +7,7 @@ import { loadPortfolio, meterViews } from "@/server/queries";
 import { readingContext } from "@/components/meters";
 import { METER_TYPES, UOMS } from "@/lib/labels";
 import { RecordReading, VoidReading } from "@/components/meter-actions";
-import { Card, Chip, Empty, PageHeader, longDate, money } from "@/components/ui";
+import { Card, Chip, Crumbs, Empty, PageHeader, linkClass, longDate, money } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Meter" };
 
@@ -36,7 +36,7 @@ export default async function MeterPage({ params }: PageProps<"/meters/[id]">) {
 
   return (
     <>
-      <p className="mb-1 text-sm"><Link href={`/properties/${prop.id}`} className="text-fg-2 hover:text-fg">{prop.name}</Link></p>
+      <Crumbs items={[["Properties", "/properties"], [prop.name, `/properties/${prop.id}`], [`${mv.unit?.label ?? "Common"} · ${m.label}`]]} />
       <PageHeader
         title={`${mv.unit?.label ?? "Common"} · ${m.label}`}
         sub={`${METER_TYPES[m.type as keyof typeof METER_TYPES]} · ${rateLabel(m.rate, m.currency)} per ${u}${m.fixedChargeMinor ? ` + ${money(m.fixedChargeMinor, m.currency)} fixed` : ""}${m.serialNumber ? ` · No. ${m.serialNumber}` : ""}`}
@@ -49,9 +49,9 @@ export default async function MeterPage({ params }: PageProps<"/meters/[id]">) {
               <thead className="border-b border-line text-left text-[13px] text-fg-2">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Date</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Reading</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Used</th>
-                  <th className="px-4 py-2.5 font-medium">Billed</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Meter reading</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Units used</th>
+                  <th className="px-4 py-2.5 font-medium">Bill</th>
                   <th className="px-4 py-2.5 font-medium"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -67,7 +67,7 @@ export default async function MeterPage({ params }: PageProps<"/meters/[id]">) {
                       <td className="px-4 py-3">
                         <span className="flex flex-wrap items-center gap-2">
                           {c ? (
-                            <Link href={`/tenancies/${c.tenancyId}`} className={`hover:underline ${c.status === "VOID" ? "line-through" : ""}`}>{money(c.amountMinor, c.currency)} · {tenancyName(c.tenancyId)}</Link>
+                            <Link href={`/tenancies/${c.tenancyId}`} className={`${linkClass} ${c.status === "VOID" ? "line-through" : ""}`}>{money(c.amountMinor, c.currency)} · billed to {tenancyName(c.tenancyId)}</Link>
                           ) : <span className="text-fg-2">{TYPE_LABEL[r.readingType] || (r.tenancyId ? "Not billed" : "No tenant")}{r.readingType === "MOVE_IN" && r.tenancyId && ` · ${tenancyName(r.tenancyId)}`}</span>}
                           {void_ && <Chip tone="neutral">VOID</Chip>}
                         </span>

@@ -6,7 +6,7 @@ import { nextPeriodStart, periodStartFor, runningBalances } from "@/lib/money";
 import { METHODS, label } from "@/lib/labels";
 import { loadPortfolio, meterViews } from "@/server/queries";
 import { MetersCard } from "@/components/meters";
-import { Card, Chip, TenancyStatus, buttonClass, longDate, money, paymentContext, shortDate } from "@/components/ui";
+import { Card, Chip, Crumbs, TenancyStatus, buttonClass, linkClass, longDate, money, paymentContext, shortDate } from "@/components/ui";
 import { AddCharge, AddCredit, ChangeRent, EditTenant, EditTerms, GiveNotice, RecordPayment, VoidEntry, WithdrawNotice } from "@/components/tenancy-actions";
 
 export const metadata: Metadata = { title: "Tenancy" };
@@ -44,9 +44,7 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
 
   return (
     <>
-      <p className="mb-1 text-sm">
-        <Link href={`/properties/${v.property.id}`} className="text-fg-2 hover:text-fg">{v.property.name}</Link>
-      </p>
+      <Crumbs items={[["Properties", "/properties"], [v.property.name, `/properties/${v.property.id}`], [`${v.unit.label} · ${primary?.fullName ?? ""}`]]} />
 
       {tn.status === "ACTIVE" && tn.plannedMoveOutDate && (
         <div className="mb-4 flex flex-wrap items-center gap-x-2 rounded-md border border-due/40 bg-due-soft px-4 py-2.5 text-sm text-due">
@@ -67,7 +65,9 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
       <Card className="mb-6">
         <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight">{v.unit.label}</h1>
+            <h1 className="text-xl font-semibold tracking-tight">
+              {v.unit.label} <span className="text-base font-normal text-fg-2">in</span> <Link href={`/properties/${v.property.id}`} className={`text-base ${linkClass}`}>{v.property.name}</Link>
+            </h1>
             <p className="text-sm text-fg-2">
               {v.people.map((p, i) => (i === 0 && v.people.length > 1 ? `${p.fullName} (main)` : p.fullName)).join(", ")}
               {primary?.phone && <span className="num"> · {primary.phone}</span>}
@@ -121,12 +121,12 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
                 chargedStarts={v.rows.filter((r) => r.source === "AUTO" && r.status === "ACTIVE" && r.periodStart).map((r) => r.periodStart!)} />
             )}
             {tn.status === "ACTIVE" && !tn.plannedMoveOutDate && <GiveNotice p={pc} leaseEnd={tn.leaseEndDate} />}
-            {tn.status === "ACTIVE" && <Link href={`/tenancies/${tn.id}/move-out`} className={buttonClass.ghost}>Move out</Link>}
+            {tn.status === "ACTIVE" && <Link href={`/tenancies/${tn.id}/move-out`} className={`${buttonClass.ghost} sm:ml-auto`}>Move out</Link>}
           </div>
         )}
       </Card>
 
-      <Card title="Ledger" action={
+      <Card title="Payments and charges" action={
         <span className="flex gap-1 text-[13px]">
           <Link href={`/print/statement/${tn.id}`} target="_blank" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-fg-2 hover:bg-surface-2 hover:text-fg">
             <FileText size={14} aria-hidden /> Statement

@@ -222,7 +222,7 @@ export async function recordPaymentAction(_: FormState, fd: FormData): Promise<F
     });
     revalidatePath("/", "layout");
     return {
-      ok: `Recorded · receipt ${res.receipts.join(", ")}${res.duplicate ? ". Possible duplicate: a payment with the same amount and date exists." : ""}`,
+      ok: `Payment recorded · receipt ${res.receipts.join(", ")} · shown under Payments and charges${res.duplicate ? ". Possible duplicate: a payment with the same amount and date exists." : ""}`,
       at: Date.now(),
     };
   });
@@ -242,7 +242,7 @@ export async function addChargeAction(_: FormState, fd: FormData): Promise<FormS
       dueDate: date(f.dueDate, "dueDate"),
     });
     revalidatePath("/", "layout");
-    return { ok: "Charge added", at: Date.now() };
+    return { ok: "Charge added · shown under Payments and charges", at: Date.now() };
   });
 }
 
@@ -259,7 +259,7 @@ export async function addCreditAction(_: FormState, fd: FormData): Promise<FormS
       reason: str(200).min(1, "Enter a reason").parse(f.reason),
     });
     revalidatePath("/", "layout");
-    return { ok: "Discount recorded", at: Date.now() };
+    return { ok: "Discount recorded · shown under Payments and charges", at: Date.now() };
   });
 }
 
@@ -460,7 +460,7 @@ export async function saveMeterAction(_: FormState, fd: FormData): Promise<FormS
 }
 
 const billMessage = (r: Awaited<ReturnType<typeof cmd.recordReading>>) =>
-  r.charged ? `Reading saved · ${formatMoney(r.charged, r.currency)} added to the tenant's balance`
+  r.charged ? `Reading saved · ${formatMoney(r.charged, r.currency)} added to the tenant's balance under Payments and charges`
   : r.baseline ? "Saved as the starting reading for this tenant. The next reading will be billed."
   : r.vacant ? "Reading saved (no tenant to bill)" : "Reading saved";
 
@@ -521,7 +521,7 @@ export async function readingsRoundAction(_: FormState, fd: FormData): Promise<F
     if (saved) revalidatePath("/", "layout");
     if (!saved && !Object.keys(rows).length) throw new FieldError("", "Enter at least one reading");
     const amount = [...totals].map(([c, n]) => formatMoney(n, c)).join(" + ");
-    const ok = saved ? `${saved} ${saved === 1 ? "reading" : "readings"} saved, ${charges} ${charges === 1 ? "charge" : "charges"} created${amount ? ` (${amount})` : ""}` : undefined;
+    const ok = saved ? `${saved} ${saved === 1 ? "reading" : "readings"} saved, ${charges} ${charges === 1 ? "bill" : "bills"} added to tenants' balances${amount ? ` (${amount})` : ""}` : undefined;
     return { ok, rows, error: Object.keys(rows).length ? `${Object.keys(rows).length} could not be saved. Check the highlighted rows.` : undefined, at: Date.now() };
   });
 }

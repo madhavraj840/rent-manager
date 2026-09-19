@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { loadPortfolio } from "@/server/queries";
 import { settlementPreview } from "@/server/commands";
-import { PageHeader, LOCALE, buttonClass } from "@/components/ui";
+import { Crumbs, PageHeader, LOCALE, buttonClass } from "@/components/ui";
 import { SettlementForm } from "./settlement-form";
 
 export const metadata: Metadata = { title: "Move out" };
@@ -23,7 +22,7 @@ export default async function MoveOutPage({ params, searchParams }: PageProps<"/
 
   return (
     <div className="mx-auto max-w-2xl">
-      <p className="mb-1 text-sm"><Link href={`/tenancies/${id}`} className="text-fg-2 hover:text-fg">{v.unit.label} · {v.people[0]?.fullName}</Link></p>
+      <Crumbs items={[["Properties", "/properties"], [v.property.name, `/properties/${v.property.id}`], [`${v.unit.label} · ${v.people[0]?.fullName ?? ""}`, `/tenancies/${id}`], ["Move out"]]} />
       <PageHeader title="Move out" sub="Check the final amounts, then finalize. The deposit covers any dues first." />
 
       <form className="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-line bg-surface p-5">

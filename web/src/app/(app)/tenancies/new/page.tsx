@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { loadPortfolio } from "@/server/queries";
-import { Card, Empty, PageHeader, buttonClass } from "@/components/ui";
+import { Card, Crumbs, Empty, PageHeader, buttonClass } from "@/components/ui";
 import { TenancyForm } from "./tenancy-form";
 
 export const metadata: Metadata = { title: "New tenancy" };
@@ -22,7 +22,7 @@ export default async function NewTenancyPage({ searchParams }: PageProps<"/tenan
 
   return (
     <div className="mx-auto max-w-2xl">
-      <p className="mb-1 text-sm"><Link href="/dashboard" className="text-fg-2 hover:text-fg">Dashboard</Link></p>
+      <Crumbs items={[["Tenants", "/tenants"], ["New tenancy"]]} />
       <PageHeader title="New tenancy" sub="Who is renting which unit, for how much, from when." />
       {!options.length ? (
         <Card>

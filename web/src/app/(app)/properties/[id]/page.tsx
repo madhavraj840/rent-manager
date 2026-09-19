@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { expensesIn, loadPortfolio, meterViews, monthSummary } from "@/server/queries";
 import { MetersCard } from "@/components/meters";
 import { PROPERTY_TYPES, UNIT_TYPES, label } from "@/lib/labels";
-import { Card, Chip, Empty, PageHeader, TenancyStatus, buttonClass, money, shortDate } from "@/components/ui";
+import { Card, Chevron, Chip, Crumbs, Empty, PageHeader, TenancyStatus, buttonClass, linkClass, money, shortDate } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Property" };
 
@@ -25,7 +25,7 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
 
   return (
     <>
-      <p className="mb-1 text-sm"><Link href="/properties" className="text-fg-2 hover:text-fg">Properties</Link></p>
+      <Crumbs items={[["Properties", "/properties"], [p.name]]} />
       <PageHeader
         title={p.name}
         sub={[label(PROPERTY_TYPES, p.type), [p.addressLine1, p.city].filter(Boolean).join(", "), p.currency].filter(Boolean).join(" · ")}
@@ -64,7 +64,7 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
                         <TenancyStatus v={v} />
                       </div>
                       <p className="mt-1 truncate text-[13px] text-fg-2">{v.people.map((x) => x.fullName).join(", ")}</p>
-                      <p className="num mt-0.5 text-[13px] text-fg-2">Rent {money(v.rent, p.currency)}</p>
+                      <p className="num mt-0.5 flex items-center justify-between text-[13px] text-fg-2">Rent {money(v.rent, p.currency)}<Chevron /></p>
                     </Link>
                   ) : (
                     <div className="px-4 py-3">
@@ -75,7 +75,7 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
                       <p className="mt-1 text-[13px] text-fg-2">
                         {label(UNIT_TYPES, u.type)}{u.defaultRentMinor ? ` · asking ${money(u.defaultRentMinor, p.currency)}` : ""}
                       </p>
-                      <Link href={`/tenancies/new?unit=${u.id}`} className="mt-1.5 inline-block text-[13px] font-medium text-primary hover:underline">
+                      <Link href={`/tenancies/new?unit=${u.id}`} className={`mt-1.5 inline-block text-[13px] ${linkClass}`}>
                         Start tenancy
                       </Link>
                     </div>
@@ -101,7 +101,7 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
                     <span className="font-medium">{v.unit.label} · {v.people[0]?.fullName}</span>
                     <span className="block text-[13px] text-fg-2">{shortDate(v.tenancy.startDate)} – {shortDate(v.tenancy.movedOutOn)}</span>
                   </span>
-                  <TenancyStatus v={v} />
+                  <span className="flex items-center gap-2"><TenancyStatus v={v} /><Chevron /></span>
                 </Link>
               </li>
             ))}

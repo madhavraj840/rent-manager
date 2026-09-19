@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
 import { formatMoney } from "@/lib/money";
 import type { Ctx } from "@/server/commands";
 import type { TenancyView } from "@/server/queries";
@@ -15,6 +16,28 @@ export const shortDate = (d?: string | null) =>
 
 export const longDate = (d?: string | null) =>
   d ? new Date(d + "T00:00:00Z").toLocaleDateString(LOCALE, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "";
+
+// C-1 (doc 20): the one style for a link inside text.
+export const linkClass = "font-medium text-primary underline-offset-2 hover:underline";
+
+// C-2: breadcrumb trail; the last item is the current page.
+export function Crumbs({ items }: { items: [label: string, href?: string][] }) {
+  return (
+    <nav aria-label="Breadcrumb" className="mb-1.5 text-sm">
+      <ol className="flex flex-wrap items-center gap-1 text-fg-2">
+        {items.map(([l, href], i) => (
+          <li key={i} className="flex items-center gap-1">
+            {i > 0 && <ChevronRight size={14} aria-hidden />}
+            {href ? <Link href={href} className={linkClass}>{l}</Link> : <span aria-current="page">{l}</span>}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+// C-1: chevron that marks a row as "opens a page".
+export const Chevron = () => <ChevronRight size={18} aria-hidden className="shrink-0 text-fg-2" />;
 
 export function PageHeader({ title, sub, actions }: { title: string; sub?: ReactNode; actions?: ReactNode }) {
   return (
@@ -85,8 +108,8 @@ export function TenancyRow({ v, ctx, showRecord = true }: { v: TenancyView; ctx:
   const primary = v.people[0];
   const due = Math.max(v.balance.balance, 0);
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 hover:bg-surface-2">
-      <Link href={`/tenancies/${v.tenancy.id}`} className="min-w-0 flex-1 max-sm:basis-full">
+    <li className="relative flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 hover:bg-surface-2">
+      <Link href={`/tenancies/${v.tenancy.id}`} className="min-w-0 flex-1 after:absolute after:inset-0 max-sm:basis-full">
         <div className="truncate font-medium">
           {v.unit.label} · {primary?.fullName ?? "No tenant"}
           {v.people.length > 1 && <span className="font-normal text-fg-2"> +{v.people.length - 1}</span>}
@@ -98,7 +121,8 @@ export function TenancyRow({ v, ctx, showRecord = true }: { v: TenancyView; ctx:
       </Link>
       <div className="num font-medium max-sm:order-1 max-sm:ml-auto sm:text-right">{due > 0 ? money(due, v.tenancy.currency) : "—"}</div>
       <TenancyStatus v={v} />
-      {showRecord && <div className="max-sm:order-2"><RecordPayment p={paymentContext(v, ctx)} compact /></div>}
+      {showRecord && <div className="relative max-sm:order-2"><RecordPayment p={paymentContext(v, ctx)} compact /></div>}
+      <Chevron />
     </li>
   );
 }
@@ -116,7 +140,7 @@ export function paymentContext(v: TenancyView, ctx: Ctx): PaymentContext {
     depositDue: Math.max(v.balance.depositDue, 0),
     open: v.balance.charges
       .filter((c) => c.remaining > 0)
-      .map((c) => ({ label: c.entry.description.replace(/^Rent · /, ""), remaining: c.remaining, amount: c.entry.amount })),
+      .map((c) => ({ label: c.entry.description, remaining: c.remaining, amount: c.entry.amount })),
   };
 }
 

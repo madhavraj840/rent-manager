@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { loadPortfolio } from "@/server/queries";
 import { PROPERTY_TYPES, label } from "@/lib/labels";
-import { Card, Empty, PageHeader, buttonClass, money } from "@/components/ui";
+import { Card, Chevron, Empty, PageHeader, buttonClass, money } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Properties" };
 
@@ -36,13 +36,14 @@ export default async function PropertiesPage() {
                   <th className="px-4 py-2.5 font-medium">Occupancy</th>
                   <th className="px-4 py-2.5 text-right font-medium">Outstanding</th>
                   <th className="px-4 py-2.5 text-right font-medium max-sm:hidden">Overdue</th>
+                  <th className="w-8"><span className="sr-only">Open</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {rows.map(({ p, total, occupied, outstanding, overdue }) => (
-                  <tr key={p.id} className="hover:bg-surface-2">
+                  <tr key={p.id} className="relative hover:bg-surface-2">
                     <td className="px-4 py-3">
-                      <Link href={`/properties/${p.id}`} className="font-medium hover:underline">{p.name}</Link>
+                      <Link href={`/properties/${p.id}`} className="font-medium after:absolute after:inset-0 hover:underline">{p.name}</Link>
                       <div className="text-[13px] text-fg-2">{[label(PROPERTY_TYPES, p.type), p.city].filter(Boolean).join(" · ")}</div>
                     </td>
                     <td className="px-4 py-3">
@@ -57,6 +58,7 @@ export default async function PropertiesPage() {
                     <td className={`num px-4 py-3 text-right max-sm:hidden ${overdue > 0 ? "font-medium text-overdue" : "text-fg-2"}`}>
                       {overdue > 0 ? money(overdue, p.currency) : "—"}
                     </td>
+                    <td className="pr-3"><Chevron /></td>
                   </tr>
                 ))}
               </tbody>

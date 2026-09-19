@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { Pencil } from "lucide-react";
 import { recordReadingAction, saveMeterAction, voidReadingAction } from "@/app/actions";
-import { addDays, currencyDigits, formatMoney, formatScaled, parseScaled, utilityAmount } from "@/lib/money";
+import { addDays, currencyDigits, formatMoney, formatScaled, parseMoney, parseScaled, utilityAmount } from "@/lib/money";
 import { METER_TYPES, UOMS } from "@/lib/labels";
 import { DialogForm } from "./dialog-form";
-import { Field, Input, MoneyInput, Select } from "./form";
+import { Field, Input, MoneyInput, Outcome, Select } from "./form";
 
 
 const btn = {
@@ -98,8 +98,8 @@ export interface ReadingContext {
 export function RecordReading({ r, compact }: { r: ReadingContext; compact?: boolean }) {
   return (
     <DialogForm
-      trigger={compact ? "Reading" : "Record reading"} triggerClass={compact ? btn.compact : btn.primary}
-      title="Record reading" subtitle={r.title} action={recordReadingAction} submitLabel="Save reading"
+      trigger="Enter reading" triggerClass={compact ? btn.compact : btn.primary}
+      title="Enter meter reading" subtitle={r.title} action={recordReadingAction} submitLabel="Save reading"
       fields={["date", "value", "oldFinal", "newStart", "amount", "dueDate"]} hidden={{ meterId: r.meterId }}
     >
       {(state) => <ReadingFields r={r} state={state} />}
@@ -114,6 +114,7 @@ function ReadingFields({ r, state }: { r: ReadingContext; state: Parameters<type
   const [oldFinal, setOldFinal] = useState("");
   const [newStart, setNewStart] = useState("0");
   const [bill, setBill] = useState(!!(r.tenant && r.prev));
+  const [amountText, setAmountText] = useState("");
   const u = UOMS[r.uom as keyof typeof UOMS] ?? r.uom;
   const fmt = (m: number) => formatMoney(m, r.currency, r.locale);
 
@@ -124,22 +125,27 @@ function ReadingFields({ r, state }: { r: ReadingContext; state: Parameters<type
   const amount = consumption !== null && consumption >= 0 ? utilityAmount(consumption, parseScaled(r.rate, 4)!, r.fixedMinor, r.currency, r.roundUnit) : null;
   const high = consumption !== null && r.avg > 0 && consumption / 1000 > 5 * r.avg;
 
+  const billText = amount !== null && bill && r.tenant ? fmt(parseMoney(amountText, r.currency) ?? amount) : null;
+  const box = "num flex h-9 items-center rounded-md border border-line bg-surface-2 px-2.5 text-fg-2";
+
   return (
     <>
-      <p className="num rounded-md bg-surface-2 px-3 py-2 text-sm">
-        {r.last ? <>Last reading <span className="font-semibold">{Number(r.last.value).toLocaleString(r.locale)} {u}</span> on {r.last.date}</> : "No readings yet. This one will be the starting point."}
-        <span className="block text-[13px] text-fg-2">Rate {r.rateLabel} per {u}{r.fixedMinor > 0 && ` + ${fmt(r.fixedMinor)} fixed`}</span>
-      </p>
+      <Field label="Reading date" name="date" state={state}>
+        <Input type="date" name="date" state={state} value={day} max={r.today} onChange={(e) => setDay(e.target.value)} required className="w-44" />
+      </Field>
+      {/* C-4: previous and current side by side, like a printed bill. */}
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Date" name="date" state={state}>
-          <Input type="date" name="date" state={state} value={day} max={r.today} onChange={(e) => setDay(e.target.value)} required />
-        </Field>
-        <Field label={`Reading (${u})`} name="value" state={state}>
-          <Input name="value" state={state} inputMode="decimal" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} className="num" required />
+        <div className="flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">Previous reading</span>
+          <span className={box}>{r.last ? `${Number(r.last.value).toLocaleString(r.locale)} ${u}` : "None yet"}</span>
+          <span className="text-[13px] text-fg-2">{r.last ? `on ${r.last.date}` : "This will be the first"}</span>
+        </div>
+        <Field label={`Current reading (${u})`} name="value" state={state}>
+          <Input name="value" state={state} inputMode="decimal" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} className="num" required autoFocus />
         </Field>
       </div>
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="replaced" checked={replaced} onChange={(e) => setReplaced(e.target.checked)} /> Meter replaced since the last reading
+        <input type="checkbox" name="replaced" checked={replaced} onChange={(e) => setReplaced(e.target.checked)} /> The meter was replaced since the previous reading
       </label>
       {replaced && (
         <div className="grid grid-cols-2 gap-3">
@@ -151,25 +157,27 @@ function ReadingFields({ r, state }: { r: ReadingContext; state: Parameters<type
           </Field>
         </div>
       )}
-      {!r.tenant ? (
-        <p className="text-[13px] text-fg-2">No current tenant on this meter, so the reading is saved without a bill.</p>
-      ) : !r.prev ? (
-        <p className="text-[13px] text-fg-2">This is the first reading for {r.tenant.name}. It is saved as their starting reading; the next one is billed.</p>
-      ) : (
+      {r.tenant && r.prev && (
         <>
-          {consumption !== null && (
-            <p className={`num text-sm ${consumption < 0 ? "text-overdue" : ""}`}>
-              {consumption < 0 ? "The reading is lower than the last one." : <>{formatScaled(consumption, 3)} {u} × {r.rateLabel}{r.fixedMinor > 0 && ` + ${fmt(r.fixedMinor)}`} = <span className="font-semibold">{fmt(amount!)}</span></>}
-              {high && <span className="block text-due">Much higher than usual (average {r.avg.toLocaleString(r.locale)} {u}). Check the reading.</span>}
-            </p>
-          )}
+          <dl className="num grid grid-cols-[1fr_auto] gap-y-1 rounded-md border border-line px-3 py-2 text-sm">
+            <dt className="text-fg-2">Units used</dt>
+            <dd className={`text-right ${consumption !== null && consumption < 0 ? "text-overdue" : ""}`}>
+              {consumption === null ? "—" : consumption < 0 ? "Lower than previous" : `${formatScaled(consumption, 3)} ${u}`}
+            </dd>
+            <dt className="text-fg-2">Rate</dt>
+            <dd className="text-right">{r.rateLabel} per {u}{r.fixedMinor > 0 && ` + ${fmt(r.fixedMinor)} fixed`}</dd>
+            <dt className="font-medium">Bill</dt>
+            <dd className="text-right font-semibold">{amount !== null ? fmt(amount) : "—"}</dd>
+          </dl>
+          {high && <p className="text-sm text-due">Much higher than usual (average {r.avg.toLocaleString(r.locale)} {u}). Check the reading.</p>}
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="bill" checked={bill} onChange={(e) => setBill(e.target.checked)} /> Add to {r.tenant.name}&apos;s balance
+            <input type="checkbox" name="bill" checked={bill} onChange={(e) => setBill(e.target.checked)} /> Bill {r.tenant.name} for this
           </label>
           {bill && (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Amount" name="amount" state={state} hint="Leave empty to use the calculation">
-                <MoneyInput name="amount" state={state} currency={r.currency} placeholder={amount !== null ? String(amount / 10 ** currencyDigits(r.currency)) : ""} />
+              <Field label="Change amount (optional)" name="amount" state={state}>
+                <MoneyInput name="amount" state={state} currency={r.currency} value={amountText} onChange={(e) => setAmountText(e.target.value)}
+                  placeholder={amount !== null ? String(amount / 10 ** currencyDigits(r.currency)) : ""} />
               </Field>
               <Field label="Due by" name="dueDate" state={state}>
                 <Input key={day} type="date" name="dueDate" state={state} defaultValue={addDays(day, r.tenant.graceDays)} required />
@@ -178,6 +186,13 @@ function ReadingFields({ r, state }: { r: ReadingContext; state: Parameters<type
           )}
         </>
       )}
+      <Outcome>
+        {!r.tenant ? "The reading is saved to this meter's history. Nobody is billed: there is no current tenant."
+          : !r.prev ? `This is ${r.tenant.name}'s first reading, so it is saved as their starting point. Nobody is billed now; the next reading is billed from here.`
+          : !bill ? "The reading is saved to this meter's history. Nobody is billed."
+          : billText ? <>{billText} is added to what {r.tenant.name} owes, and shows under Payments and charges on their tenancy page. The reading is saved to this meter&apos;s history.</>
+          : `Enter the current reading to see the bill for ${r.tenant.name}.`}
+      </Outcome>
     </>
   );
 }
