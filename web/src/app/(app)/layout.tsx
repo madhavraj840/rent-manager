@@ -2,10 +2,14 @@ import Link from "next/link";
 import { Menu, Search, UserRound } from "lucide-react";
 import { Nav } from "@/components/nav";
 import { Toaster } from "@/components/toaster";
+import { cloudMode } from "@/db";
+import { signOutAction } from "@/app/actions";
+import { authUser } from "@/server/auth";
 import { requireCtx } from "@/server/queries";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { workspace } = await requireCtx();
+  const user = cloudMode() ? await authUser() : null;
   return (
     <div className="flex min-h-screen">
       <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-line bg-surface px-3 py-4 md:flex">
@@ -34,9 +38,20 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             <Search size={16} aria-hidden />
             <input name="q" aria-label="Search" placeholder="Search tenants, rooms, receipts" className="w-full min-w-0 bg-transparent text-fg outline-none placeholder:text-fg-2" />
           </form>
-          <span aria-label="Account" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-fg-2">
-            <UserRound size={17} aria-hidden />
-          </span>
+          <details className="relative shrink-0">
+            <summary aria-label="Account" className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-full bg-surface-2 text-fg-2 hover:text-fg">
+              <UserRound size={17} aria-hidden />
+            </summary>
+            <div className="absolute right-0 top-10 w-60 rounded-lg border border-line bg-surface p-3 text-sm">
+              <p className="font-medium">{workspace.name}</p>
+              <p className="truncate text-fg-2">{user ? `Signed in as ${user.email}` : "On this computer only (no sign-in)"}</p>
+              {user && (
+                <form action={signOutAction} className="mt-3">
+                  <button className="w-full rounded-md border border-line-strong px-3 py-1.5 font-medium hover:bg-surface-2">Sign out</button>
+                </form>
+              )}
+            </div>
+          </details>
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-6">{children}</main>
         <Toaster />

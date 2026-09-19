@@ -3,7 +3,8 @@ import { cache } from "react";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import { and, asc, desc, eq, gte, inArray, isNull, like, lt, ne, or, sql } from "drizzle-orm";
-import { getDb, t } from "@/db";
+import { cloudMode, getDb, t } from "@/db";
+import { authUser } from "./auth";
 import { allocate } from "@/lib/money";
 import { generateDueCharges, toEntry, type Ctx } from "./commands";
 
@@ -11,16 +12,20 @@ export const todayIn = (timeZone: string) => new Intl.DateTimeFormat("en-CA", { 
 
 /**
  * The signed-in member and workspace.
- * ponytail: local mode has one user and one workspace; Supabase Auth + workspace switcher replace this (M2, D-058).
+ * Local mode: the only member. Cloud mode: the signed-in person's first active workspace.
+ * ponytail: one workspace per person for now; a workspace switcher comes with team invites (F-TEAM).
  */
 export const getCtx = cache(async (): Promise<Ctx | null> => {
   await connection(); // always read fresh data, never prerender
+  // Cloud mode: the person comes from the verified Supabase session, never from the browser.
+  const user = cloudMode() ? await authUser() : null;
+  if (cloudMode() && !user) redirect("/login");
   const db = await getDb();
   const [m] = await db
     .select({ userId: t.memberships.userId, userName: t.memberships.displayName, workspace: t.workspaces })
     .from(t.memberships)
     .innerJoin(t.workspaces, eq(t.workspaces.id, t.memberships.workspaceId))
-    .where(eq(t.memberships.status, "ACTIVE"))
+    .where(and(eq(t.memberships.status, "ACTIVE"), user ? eq(t.memberships.userId, user.id) : undefined))
     .limit(1);
   if (!m?.userId) return null;
   return { userId: m.userId, userName: m.userName ?? undefined, workspace: m.workspace, today: todayIn(m.workspace.timeZone) };

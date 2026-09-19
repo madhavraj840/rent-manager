@@ -5,7 +5,8 @@ import { setupWorkspace } from "@/app/actions";
 import { COUNTRIES, CURRENCIES, countryName, currencyOf } from "@/lib/countries";
 import { Field, FormError, Input, Select, Submit, useActionForm } from "@/components/form";
 
-export function SetupForm() {
+/** `email` is set when signed in (cloud mode): it is shown but can't be changed. */
+export function SetupForm({ email }: { email?: string }) {
   const { state, pending, onSubmit } = useActionForm(setupWorkspace);
   const [country, setCountry] = useState("IN");
   const [currency, setCurrency] = useState("INR");
@@ -22,7 +23,7 @@ export function SetupForm() {
       <FormError state={state} fields={["fullName", "email", "name", "countryCode", "currency", "timeZone"]} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Your name" name="fullName" state={state}><Input name="fullName" state={state} autoComplete="name" required maxLength={100} /></Field>
-        <Field label="Email" name="email" state={state}><Input type="email" name="email" state={state} autoComplete="email" required /></Field>
+        <Field label="Email" name="email" state={state}><Input type="email" name="email" state={state} autoComplete="email" required defaultValue={email} readOnly={!!email} /></Field>
       </div>
       <Field label="Business name" name="name" state={state} hint="Usually your name or business, e.g. Sharma Rentals">
         <Input name="name" state={state} required maxLength={80} />

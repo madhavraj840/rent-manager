@@ -23,12 +23,19 @@ Only record what was seen in the code or confirmed by a test. Mark guesses **ASS
 # Project Architecture
 
 - **Website:** Next.js 16 App Router in `web/`, with Tailwind 4, Drizzle ORM and Zod.
-- **Database now:** PGlite (Postgres running inside the Node process) in `web/.data/pglite`, set up in `web/src/db/index.ts`.
-- **Database later:** Supabase Postgres in Mumbai (`ap-south-1`); decision D-030, confirmed 2026-09-20.
-- **Files now:** stored on disk in `web/.data/pglite-files/ws/<workspace>/<document id>`. Later: Supabase Storage, a private bucket with signed URLs.
+- **Two modes, chosen in `web/src/db/index.ts` (`cloudMode()`):**
+  - **Cloud** (when `DATABASE_URL` is set and `RENT_DATA_DIR` is not):
+    - Database: Supabase Postgres, Mumbai `ap-south-1`, through the transaction pooler with `prepare: false`.
+    - Sign-in: Supabase Auth with an emailed code (`server/auth.ts`, `proxy.ts`, `app/login`).
+    - Files: the private Storage bucket `documents`, reached only with the secret key (`server/files.ts`).
+    - Tables are updated at build time by `db/migrate.mjs`, using the session pooler.
+  - **Local** (no `DATABASE_URL`, or `RENT_DATA_DIR` set): PGlite in `web/.data`, files in `web/.data/pglite-files`, no sign-in. Tests always run this way.
+- **Moving local data to the cloud:** `npm run copy-to-supabase`, or `-- --dry-run` to check without keeping anything. It runs once, into an empty database.
 - **Flow:** form → server action (`app/actions.ts`, Zod validation) → command (`server/commands.ts`, business rules and transaction) → page reads through `server/queries.ts`.
 - **Balances** are never stored. They are worked out from the ledger (`lib/money.ts`, oldest charge paid first).
-- **Auth:** not built yet. There is one local user (`getCtx` in `server/queries.ts`). Supabase Auth replaces it.
+- **Auth:**
+  - In cloud mode, `getCtx` takes the person from the verified session (`getClaims`) and finds **their** membership.
+  - `proxy.ts` is only the first gate that sends signed-out visitors to /login. Pages and actions check the person again on the server.
 - **Specs:** `docs/00`–`20`. Decisions are in `docs/16`.
 - **Tests:**
   - `npm test` runs the money maths.
@@ -67,6 +74,23 @@ Only record what was seen in the code or confirmed by a test. Mark guesses **ASS
 - **Why it happens:** the `Outcome` heading is styled `uppercase`, so `innerText` gives "WHAT HAPPENS WHEN YOU SAVE".
 - **Correct approach:** compare in lower case in tests.
 
+### Database links copied from Supabase keep `[YOUR-PASSWORD]` brackets
+- **Why it happens:** people replace the words inside the brackets but keep the brackets, so the login fails with `28P01 password authentication failed`.
+- **Correct approach:** the password goes in with no brackets. To check `.env.local` without printing secrets, print only booleans (starts with `[`, port, host).
+
+### postgres-js sends a JS string as a JSON string when the parameter is cast `::json`
+- **Why it happens:** the parameter type is json, so the string is JSON-encoded again. Postgres then fails with "cannot call json_populate_recordset on a scalar".
+- **Correct approach:** cast `$1::text::json`.
+
+### Generated columns can't be inserted
+- **Why it happens:** `tenancies.occupancy` is a generated column, so copying `select *` fails.
+- **Correct approach:** list the columns from `information_schema.columns` with `is_generated = 'NEVER'`.
+
+### Browser IDs must be checked against the workspace everywhere, including "pick an existing X"
+- **What happened (2026-09-20):** `startTenancy` accepted any `tenantId`, so another account's tenant could be linked and read.
+- **Fix:** check the ID with `workspace_id = ctx.workspace.id` before using it.
+- **How to find more:** grep for `.where(eq(t.X.id` without `workspaceId`.
+
 ### Circular import between `ui.tsx` and the action components
 - **Correct approach:** shared form pieces (`Outcome`, `Field`) live in `components/form.tsx`, not `ui.tsx`.
 
@@ -98,6 +122,10 @@ Only record what was seen in the code or confirmed by a test. Mark guesses **ASS
 ### Plain-word scan
 - The scratchpad `scan.mjs` crawls every page and dialog and lists any old word (tenancy, unit, void, outstanding, notice, workspace) or UUID it finds.
 - Run it after any change to screen text. Suite `e2e8` includes the same check.
+
+### Cloud test with throw-away accounts
+- The scratchpad `cloud-test.mjs` creates accounts with `admin.createUser`, gets a code with `admin.generateLink` (no email is sent), and signs in with `verifyOtp` through `@supabase/ssr`, capturing the cookies.
+- It checks that person B can't see person A's data, then deletes both accounts. Deleting rows needs `set_config('app.purge', 'on', true)`.
 
 ### Test isolation
 - `start-test.sh` starts a server on port 3210 with `RENT_DATA_DIR=<scratch>/testdb` and `NEXT_DIST_DIR=.next-test`.
@@ -134,7 +162,7 @@ Only record what was seen in the code or confirmed by a test. Mark guesses **ASS
 
 These are NEEDS WORK, not bugs yet, because today there is one local user.
 
-- **No authentication or roles.** `getCtx` returns the only member.
+- **No roles yet:** every signed-in member is the owner of their own workspace. There are no team invites.
 - **`loadPortfolio` loads the whole workspace on each request.** This is fine locally but unbounded. It must become per-page queries (docs/05 §6.1) before hosting.
 - **No idempotency key on payments.**
   - Today: the Save button is disabled while saving, and a possible duplicate (same amount and date) is flagged, not blocked.

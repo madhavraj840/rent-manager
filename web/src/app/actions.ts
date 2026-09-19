@@ -2,14 +2,15 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { getDb, t } from "@/db";
+import { cloudMode, getDb, t } from "@/db";
 import { formatMoney, parseMoney, parseScaled } from "@/lib/money";
 import { unitLabels } from "@/lib/units";
 import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, DOC_CATEGORIES, EXPENSE_CATEGORIES, PERSON_DOCS, PAY_METHODS, PROPERTY_TYPES as PT, UNIT_TYPES as UT } from "@/lib/labels";
 import * as cmd from "@/server/commands";
-import { requireCtx } from "@/server/queries";
+import { getCtx, requireCtx } from "@/server/queries";
+import { authUser, supabaseServer } from "@/server/auth";
 import { seedSample } from "@/server/sample";
 
 export type FormState = { error?: string; field?: string; ok?: string; at?: number; rows?: Record<string, string> } | undefined;
@@ -56,8 +57,9 @@ function money(value: string | undefined, currency: string, field: string, { req
 }
 
 async function tenancyCurrency(id: string) {
+  const ctx = await requireCtx();
   const db = await getDb();
-  const [tn] = await db.select({ currency: t.tenancies.currency }).from(t.tenancies).where(eq(t.tenancies.id, id));
+  const [tn] = await db.select({ currency: t.tenancies.currency }).from(t.tenancies).where(and(eq(t.tenancies.id, id), eq(t.tenancies.workspaceId, ctx.workspace.id)));
   if (!tn) throw new FieldError("", "Tenant record not found");
   return tn.currency;
 }
@@ -74,7 +76,12 @@ export async function setupWorkspace(_: FormState, fd: FormData): Promise<FormSt
       currency: z.string().regex(/^[A-Z]{3}$/, "Choose a currency"),
       timeZone: str(60).min(1, "Choose a time zone"),
     }).parse(form(fd));
-    await cmd.createWorkspace(v);
+    if (!cloudMode()) return void (await cmd.createWorkspace(v));
+    // Cloud mode: the owner is the signed-in person, and the email is theirs, not the one typed in.
+    const user = await authUser();
+    if (!user) redirect("/login");
+    if (await getCtx()) redirect("/dashboard"); // already has an account: never create a second one by accident
+    await cmd.createWorkspace({ ...v, email: user.email }, user.id);
   });
   if (r) return r;
   redirect("/dashboard");
@@ -117,7 +124,7 @@ export async function createUnits(_: FormState, fd: FormData): Promise<FormState
   const r = await guard(async () => {
     const ctx = await requireCtx();
     const db = await getDb();
-    const [p] = await db.select().from(t.properties).where(eq(t.properties.id, f.propertyId));
+    const [p] = await db.select().from(t.properties).where(and(eq(t.properties.id, f.propertyId), eq(t.properties.workspaceId, ctx.workspace.id)));
     if (!p) throw new FieldError("", "Property not found");
     const type = z.enum(UNIT_TYPES, "Choose a room type").parse(f.type);
     const base = {
@@ -162,7 +169,7 @@ export async function startTenancyAction(_: FormState, fd: FormData): Promise<Fo
     const ctx = await requireCtx();
     const f = form(fd);
     const db = await getDb();
-    const [unit] = await db.select().from(t.units).where(eq(t.units.id, f.unitId ?? ""));
+    const [unit] = await db.select().from(t.units).where(and(eq(t.units.id, f.unitId ?? ""), eq(t.units.workspaceId, ctx.workspace.id)));
     if (!unit) throw new FieldError("unitId", "Choose a room");
     const [p] = await db.select().from(t.properties).where(eq(t.properties.id, unit.propertyId));
     const cur = p.currency;
@@ -388,7 +395,7 @@ export async function saveExpenseAction(_: FormState, fd: FormData): Promise<For
     const propertyId = f.propertyId || undefined;
     let currency = ctx.workspace.defaultCurrency;
     if (propertyId) {
-      const [p] = await db.select({ currency: t.properties.currency }).from(t.properties).where(eq(t.properties.id, propertyId));
+      const [p] = await db.select({ currency: t.properties.currency }).from(t.properties).where(and(eq(t.properties.id, propertyId), eq(t.properties.workspaceId, ctx.workspace.id)));
       if (!p) throw new FieldError("propertyId", "Choose a property");
       currency = p.currency;
     }
@@ -450,7 +457,7 @@ export async function saveMeterAction(_: FormState, fd: FormData): Promise<FormS
     const ctx = await requireCtx();
     const f = form(fd);
     const db = await getDb();
-    const [p] = await db.select({ currency: t.properties.currency }).from(t.properties).where(eq(t.properties.id, f.propertyId ?? ""));
+    const [p] = await db.select({ currency: t.properties.currency }).from(t.properties).where(and(eq(t.properties.id, f.propertyId ?? ""), eq(t.properties.workspaceId, ctx.workspace.id)));
     if (!p) throw new FieldError("", "Property not found");
     const rateE4 = parseScaled(f.rate ?? "", 4);
     if (rateE4 === null) throw new FieldError("rate", "Enter a rate with up to 4 decimals");
@@ -482,7 +489,7 @@ export async function recordReadingAction(_: FormState, fd: FormData): Promise<F
     const ctx = await requireCtx();
     const f = form(fd);
     const db = await getDb();
-    const [m] = await db.select({ currency: t.meters.currency }).from(t.meters).where(eq(t.meters.id, f.meterId ?? ""));
+    const [m] = await db.select({ currency: t.meters.currency }).from(t.meters).where(and(eq(t.meters.id, f.meterId ?? ""), eq(t.meters.workspaceId, ctx.workspace.id)));
     if (!m) throw new FieldError("", "Meter not found");
     const replaced = f.replaced === "on" ? { oldFinalMilli: reading(f.oldFinal, "oldFinal"), newStartMilli: reading(f.newStart || "0", "newStart") } : undefined;
     const r = await cmd.recordReading(ctx, {
@@ -573,4 +580,36 @@ export async function restoreDocumentAction(fd: FormData) {
   const ctx = await requireCtx();
   await cmd.setDocumentDeleted(ctx, form(fd).id, false);
   revalidatePath("/", "layout");
+}
+
+// ---------- Sign in with an emailed code (cloud mode, SCR-01) ----------
+
+export async function sendCodeAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const email = z.email("Enter a valid email").parse(String(fd.get("email") ?? "").trim().toLowerCase());
+    const { error } = await (await supabaseServer()).auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+    if (error) {
+      if (error.status === 429) throw new FieldError("email", "Too many codes were asked for. Wait a minute, then try again.");
+      console.error("sendCode:", error.status, error.code);
+      throw new FieldError("email", "The code could not be sent. Check the email address and try again.");
+    }
+    return { ok: `We sent a code to ${email}. It can take a minute to arrive.`, at: Date.now() };
+  });
+}
+
+export async function verifyCodeAction(_: FormState, fd: FormData): Promise<FormState> {
+  const r = await guard(async () => {
+    const email = z.email("Enter a valid email").parse(String(fd.get("email") ?? "").trim().toLowerCase());
+    const token = String(fd.get("code") ?? "").replace(/\s/g, "");
+    if (!/^\d{6,10}$/.test(token)) throw new FieldError("code", "Enter the code from the email (numbers only).");
+    const { error } = await (await supabaseServer()).auth.verifyOtp({ email, token, type: "email" });
+    if (error) throw new FieldError("code", "That code is wrong or too old. Ask for a new code.");
+  });
+  if (r) return r;
+  redirect("/dashboard");
+}
+
+export async function signOutAction() {
+  await (await supabaseServer()).auth.signOut();
+  redirect("/login");
 }

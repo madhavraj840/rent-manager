@@ -1,8 +1,7 @@
 import "server-only";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { and, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
-import { filesDir, getDb, t, type DB } from "@/db";
+import { getDb, t, type DB } from "@/db";
+import { putFile, removeFiles } from "./files";
 import {
   addDays, allocate, formatMoney, formatScaled, moveOutCredit, nextPeriodStart, parseScaled, periodStartFor, rentSchedule, roundingUnit,
   utilityAmount, utilityDescription, type LedgerEntry,
@@ -73,10 +72,11 @@ async function run<T>(
 
 // ---------- Workspace ----------
 
-export async function createWorkspace(input: { name: string; countryCode: string; currency: string; timeZone: string; fullName: string; email: string }) {
+/** `userId` is the signed-in Supabase user (cloud mode). Local mode has one profile, created on first run. */
+export async function createWorkspace(input: { name: string; countryCode: string; currency: string; timeZone: string; fullName: string; email: string }, userId?: string) {
   const db = await getDb();
-  const [existing] = await db.select().from(t.profiles).limit(1);
-  const profileId = existing?.id ?? crypto.randomUUID();
+  const [existing] = await db.select().from(t.profiles).where(userId ? eq(t.profiles.id, userId) : undefined).limit(1);
+  const profileId = existing?.id ?? userId ?? crypto.randomUUID();
   const wsId = crypto.randomUUID();
   return run(null, "workspace.create", "workspace", async (tx) => {
     if (!existing) await tx.insert(t.profiles).values({ id: profileId, fullName: input.fullName, email: input.email });
@@ -275,6 +275,9 @@ export function startTenancy(ctx: Ctx, input: StartTenancyInput) {
     }
 
     let tenantId = input.tenantId;
+    // A picked tenant must belong to this account (never trust an ID from the browser).
+    if (tenantId && !(await tx.select({ id: t.tenants.id }).from(t.tenants).where(and(eq(t.tenants.id, tenantId), eq(t.tenants.workspaceId, ctx.workspace.id)))).length)
+      throw new DomainError("NOT_FOUND", "Tenant not found.", "tenantId");
     if (!tenantId) {
       const [tt] = await tx.insert(t.tenants).values({ ...input.tenant!, workspaceId: ctx.workspace.id, createdBy: ctx.userId }).returning();
       tenantId = tt.id;
@@ -783,7 +786,6 @@ export function sniffMime(b: Uint8Array): string | null {
   return null;
 }
 
-export const docFile = (storagePath: string) => path.join(filesDir(), storagePath);
 
 const DOC_PARENTS = { PROPERTY: t.properties, TENANT: t.tenants, TENANCY: t.tenancies, EXPENSE: t.expenses } as const;
 export type DocParent = keyof typeof DOC_PARENTS;
@@ -802,8 +804,7 @@ export async function addDocument(ctx: Ctx, input: { entityType: DocParent; enti
   const id = crypto.randomUUID();
   const storagePath = `ws/${ctx.workspace.id}/${id}`;
   // The file is written first; if the record fails it is removed again, so no orphan row ever points at a missing file.
-  await mkdir(path.dirname(docFile(storagePath)), { recursive: true });
-  await writeFile(docFile(storagePath), input.bytes);
+  await putFile(storagePath, input.bytes, mimeType);
   try {
     return await run(ctx, "document.add", "document", async (tx) => {
       const table = DOC_PARENTS[input.entityType];
@@ -826,7 +827,7 @@ export async function addDocument(ctx: Ctx, input: { entityType: DocParent; enti
       return { entityId: id, changes: { entityType: input.entityType, entityId: input.entityId, category: input.category, sizeBytes: input.bytes.length }, result: { id, sensitive } };
     });
   } catch (e) {
-    await rm(docFile(storagePath), { force: true });
+    await removeFiles([storagePath]).catch(() => undefined);
     throw e;
   }
 }
@@ -855,5 +856,5 @@ async function purgeDeletedDocuments(ctx: Ctx) {
   const old = await db.delete(t.documents)
     .where(and(eq(t.documents.workspaceId, ctx.workspace.id), lt(t.documents.deletedAt, sql`now() - make_interval(days => ${DOC_LIMITS.keepDeletedDays})`)))
     .returning({ storagePath: t.documents.storagePath });
-  await Promise.all(old.map((d) => rm(docFile(d.storagePath), { force: true })));
+  await removeFiles(old.map((d) => d.storagePath));
 }

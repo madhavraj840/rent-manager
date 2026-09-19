@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { cloudMode } from "@/db";
+import { authUser } from "@/server/auth";
 import { getCtx } from "@/server/queries";
 import { SetupForm } from "./setup-form";
 
@@ -17,7 +19,7 @@ export default async function SetupPage() {
         </div>
         <h1 className="text-xl font-semibold tracking-tight">Set up your account</h1>
         <p className="mt-1 text-sm text-fg-2">Your account holds your properties, tenants and money records. Later you can invite co-owners and managers.</p>
-        <SetupForm />
+        <SetupForm email={cloudMode() ? (await authUser())?.email : undefined} />
       </div>
     </main>
   );
