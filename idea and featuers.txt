@@ -1,0 +1,17 @@
+an application to monitor the rent from a particular property ; 
+
+can be an app or a webpage ;
+web page is easier  
+
+
+basic features
+ -- shareability among various owners and between the tenant and the owner ; 
+-- notice board -  to broadcast information to all the tenents in one go ; 
+-- basic logging like the rent security - images for proof ; calculation of the rent ; 
+-- voice recordings ; or not (TO BE DECIDED )
+
+
+OTHER FEATURES 
+-- pay only by the owner not by the tenant - can view the app with the website 
+-- pay per property - later to be increased 
+--  

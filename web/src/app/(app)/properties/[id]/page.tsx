@@ -1,0 +1,104 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { loadPortfolio, monthSummary } from "@/server/queries";
+import { PROPERTY_TYPES, UNIT_TYPES, label } from "@/lib/labels";
+import { Card, Chip, Empty, PageHeader, TenancyStatus, buttonClass, money, shortDate } from "@/components/ui";
+
+export const metadata: Metadata = { title: "Property" };
+
+// SCR-21 Property detail
+export default async function PropertyPage({ params }: PageProps<"/properties/[id]">) {
+  const { id } = await params;
+  const { ctx, properties, units, views } = await loadPortfolio();
+  const p = properties.find((x) => x.id === id);
+  if (!p) notFound();
+  const pv = views.filter((v) => v.property.id === p.id);
+  const current = pv.filter((v) => v.tenancy.status === "ACTIVE");
+  const past = pv.filter((v) => v.tenancy.status !== "ACTIVE");
+  const s = monthSummary(current, ctx.today.slice(0, 7));
+  const pu = units.filter((u) => u.propertyId === p.id);
+  const addUnits = <Link href={`/properties/${p.id}/units`} className={buttonClass.primary}>Add units</Link>;
+
+  return (
+    <>
+      <p className="mb-1 text-sm"><Link href="/properties" className="text-fg-2 hover:text-fg">Properties</Link></p>
+      <PageHeader
+        title={p.name}
+        sub={[label(PROPERTY_TYPES, p.type), [p.addressLine1, p.city].filter(Boolean).join(", "), p.currency].filter(Boolean).join(" · ")}
+        actions={<><Link href={`/properties/${p.id}/edit`} className={buttonClass.secondary}>Edit</Link>{addUnits}</>}
+      />
+
+      <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-4">
+        {[
+          ["Due this month", money(s.billed, p.currency)],
+          ["Collected this month", money(s.collected, p.currency)],
+          ["Outstanding", money(s.outstanding, p.currency)],
+          ["Occupied", `${current.length} of ${pu.length}`],
+        ].map(([k, v]) => (
+          <div key={k} className="bg-surface px-4 py-3">
+            <p className="text-[13px] text-fg-2">{k}</p>
+            <p className="num mt-0.5 text-lg font-semibold">{v}</p>
+          </div>
+        ))}
+      </div>
+
+      <Card title={`Units (${pu.length})`} className="overflow-hidden">
+        {!pu.length ? (
+          <Empty action={addUnits}>No units yet. Add one, or add many at once.</Empty>
+        ) : (
+          <ul className="-mb-px -mr-px grid sm:grid-cols-2 lg:grid-cols-3">
+            {pu.map((u) => {
+              const v = current.find((x) => x.unit.id === u.id);
+              return (
+                <li key={u.id} className="border-b border-r border-line">
+                  {v ? (
+                    <Link href={`/tenancies/${v.tenancy.id}`} className="block px-4 py-3 hover:bg-surface-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium">{u.label}</span>
+                        <TenancyStatus v={v} />
+                      </div>
+                      <p className="mt-1 truncate text-[13px] text-fg-2">{v.people.map((x) => x.fullName).join(", ")}</p>
+                      <p className="num mt-0.5 text-[13px] text-fg-2">Rent {money(v.rent, p.currency)}</p>
+                    </Link>
+                  ) : (
+                    <div className="px-4 py-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium">{u.label}</span>
+                        <Chip tone="neutral">VACANT</Chip>
+                      </div>
+                      <p className="mt-1 text-[13px] text-fg-2">
+                        {label(UNIT_TYPES, u.type)}{u.defaultRentMinor ? ` · asking ${money(u.defaultRentMinor, p.currency)}` : ""}
+                      </p>
+                      <Link href={`/tenancies/new?unit=${u.id}`} className="mt-1.5 inline-block text-[13px] font-medium text-primary hover:underline">
+                        Start tenancy
+                      </Link>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+
+      {past.length > 0 && (
+        <Card title="Past tenancies" className="mt-6">
+          <ul className="divide-y divide-line text-sm">
+            {past.map((v) => (
+              <li key={v.tenancy.id}>
+                <Link href={`/tenancies/${v.tenancy.id}`} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 hover:bg-surface-2">
+                  <span>
+                    <span className="font-medium">{v.unit.label} · {v.people[0]?.fullName}</span>
+                    <span className="block text-[13px] text-fg-2">{shortDate(v.tenancy.startDate)} – {shortDate(v.tenancy.movedOutOn)}</span>
+                  </span>
+                  <TenancyStatus v={v} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+    </>
+  );
+}

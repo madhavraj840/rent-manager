@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/* Tokens from docs/09_UI_UX_SPECIFICATION.md §3.1. Components use these names, never raw hex. */
+:root {
+  --bg: #f6f7f6;
+  --surface: #ffffff;
+  --surface-2: #f1f3f1;
+  --text: #1c1d1f;
+  --text-2: #53575c;
+  --border: #e1e4e1;
+  --border-strong: #c9cdc9;
+  --primary: #1b6b4a;
+  --primary-hover: #155a3d;
+  --on-primary: #ffffff;
+  --primary-soft: #e3f2ea;
+  --due: #a14a17;
+  --due-soft: #fbeee4;
+  --overdue: #b3261e;
+  --overdue-soft: #fbe9e8;
+  --focus: #1b6b4a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121413;
+    --surface: #1a1c1b;
+    --surface-2: #222523;
+    --text: #e6e8e6;
+    --text-2: #a9aeab;
+    --border: #2d312f;
+    --border-strong: #3d423f;
+    --primary: #7bc8a1;
+    --primary-hover: #95d6b4;
+    --on-primary: #00341f;
+    --primary-soft: #143d2b;
+    --due: #e5a06c;
+    --due-soft: #3a2616;
+    --overdue: #f2b8b5;
+    --overdue-soft: #3d1c1a;
+    --focus: #7bc8a1;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fg: var(--text);
+  --color-fg-2: var(--text-2);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-due: var(--due);
+  --color-due-soft: var(--due-soft);
+  --color-overdue: var(--overdue);
+  --color-overdue-soft: var(--overdue-soft);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* Money always lines up in columns (09 §3.2). */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* In the base layer so utilities like outline-none can override it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

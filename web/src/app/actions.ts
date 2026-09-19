@@ -1,0 +1,379 @@
+"use server";
+
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { getDb, t } from "@/db";
+import { parseMoney } from "@/lib/money";
+import { unitLabels } from "@/lib/units";
+import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, PAY_METHODS, PROPERTY_TYPES as PT, UNIT_TYPES as UT } from "@/lib/labels";
+import * as cmd from "@/server/commands";
+import { requireCtx } from "@/server/queries";
+import { seedSample } from "@/server/sample";
+
+export type FormState = { error?: string; field?: string; ok?: string; at?: number } | undefined;
+
+// Trust boundary: every action validates with Zod, then calls a command (commands re-check business rules).
+
+class FieldError extends Error {
+  constructor(public field: string, message: string) {
+    super(message);
+  }
+}
+
+async function guard(fn: () => Promise<FormState | void>): Promise<FormState> {
+  try {
+    return (await fn()) ?? undefined;
+  } catch (e) {
+    if (e instanceof FieldError) return { error: e.message, field: e.field };
+    if (e instanceof cmd.DomainError) return { error: e.message, field: e.field };
+    if (e instanceof z.ZodError) {
+      const issue = e.issues[0];
+      return { error: issue.message, field: String(issue.path[0] ?? "") };
+    }
+    throw e; // redirect() and real bugs
+  }
+}
+
+const str = (max = 200) => z.string().trim().max(max);
+const opt = (max = 200) => z.string().trim().max(max).optional().transform((v) => v || undefined);
+const date = (value: string | undefined, field: string) => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value))) throw new FieldError(field, "Choose a date");
+  return value;
+};
+const form = (fd: FormData) => Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === "string")) as Record<string, string>;
+
+function money(value: string | undefined, currency: string, field: string, { required = false, positive = false } = {}) {
+  if (!value?.trim()) {
+    if (required) throw new FieldError(field, "Enter an amount");
+    return 0;
+  }
+  const m = parseMoney(value, currency);
+  if (m === null) throw new FieldError(field, "Enter a valid amount");
+  if (positive && m <= 0) throw new FieldError(field, "Amount must be more than zero");
+  return m;
+}
+
+async function tenancyCurrency(id: string) {
+  const db = await getDb();
+  const [tn] = await db.select({ currency: t.tenancies.currency }).from(t.tenancies).where(eq(t.tenancies.id, id));
+  if (!tn) throw new FieldError("", "Tenancy not found");
+  return tn.currency;
+}
+
+// ---------- Workspace (SCR-03) ----------
+
+export async function setupWorkspace(_: FormState, fd: FormData): Promise<FormState> {
+  const r = await guard(async () => {
+    const v = z.object({
+      fullName: str(100).min(1, "Enter your name"),
+      email: z.email("Enter a valid email"),
+      name: str(80).min(2, "Workspace name needs at least 2 characters"),
+      countryCode: z.string().regex(/^[A-Z]{2}$/, "Choose a country"),
+      currency: z.string().regex(/^[A-Z]{3}$/, "Choose a currency"),
+      timeZone: str(60).min(1, "Choose a time zone"),
+    }).parse(form(fd));
+    await cmd.createWorkspace(v);
+  });
+  if (r) return r;
+  redirect("/dashboard");
+}
+
+export async function loadSample(): Promise<void> {
+  const ctx = await requireCtx();
+  await seedSample(ctx);
+  revalidatePath("/", "layout");
+  redirect("/dashboard");
+}
+
+// ---------- Properties (SCR-22) and units (SCR-24) ----------
+
+const PROPERTY_TYPES = Object.keys(PT) as [keyof typeof PT, ...(keyof typeof PT)[]];
+
+export async function saveProperty(_: FormState, fd: FormData): Promise<FormState> {
+  let id = "";
+  const r = await guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const v = z.object({
+      name: str(100).min(1, "Enter a property name"),
+      type: z.enum(PROPERTY_TYPES, "Choose a type"),
+      addressLine1: opt(200), city: opt(100), region: opt(100), postalCode: opt(20), notes: opt(2000),
+      countryCode: z.string().regex(/^[A-Z]{2}$/, "Choose a country"),
+      currency: z.string().regex(/^[A-Z]{3}$/, "Choose a currency"),
+    }).parse(f);
+    id = f.id ? await cmd.updateProperty(ctx, f.id, v) : await cmd.createProperty(ctx, v);
+  });
+  if (r) return r;
+  revalidatePath("/", "layout");
+  redirect(`/properties/${id}`);
+}
+
+const UNIT_TYPES = Object.keys(UT) as [keyof typeof UT, ...(keyof typeof UT)[]];
+
+export async function createUnits(_: FormState, fd: FormData): Promise<FormState> {
+  const f = form(fd);
+  const r = await guard(async () => {
+    const ctx = await requireCtx();
+    const db = await getDb();
+    const [p] = await db.select().from(t.properties).where(eq(t.properties.id, f.propertyId));
+    if (!p) throw new FieldError("", "Property not found");
+    const type = z.enum(UNIT_TYPES, "Choose a unit type").parse(f.type);
+    const base = {
+      type,
+      floorLabel: f.floorLabel?.trim() || undefined,
+      defaultRentMinor: money(f.rent, p.currency, "rent") || undefined,
+      defaultDepositMinor: money(f.deposit, p.currency, "deposit") || undefined,
+    };
+    let labels: string[];
+    if (f.mode === "many") {
+      const n = z.object({
+        count: z.coerce.number().int().min(1, "At least 1 unit").max(500, "At most 500 at once"),
+        start: z.coerce.number().int().min(0).max(100000),
+        step: z.coerce.number().int().min(1).max(100),
+        pad: z.coerce.number().int().min(0).max(6),
+        pattern: str(40).min(1, "Enter a name pattern"),
+      }).parse(f);
+      labels = unitLabels(n.pattern, n.count, n.start, n.step, n.pad);
+    } else {
+      labels = [z.string().trim().min(1, "Enter a unit name").max(40).parse(f.label)];
+    }
+    if (new Set(labels.map((l) => l.toLowerCase())).size !== labels.length) throw new FieldError("pattern", "The pattern creates the same name twice");
+    if (labels.some((l) => l.length > 40)) throw new FieldError("pattern", "Unit names can be at most 40 characters");
+    try {
+      await cmd.addUnits(ctx, p.id, labels.map((label) => ({ ...base, label })));
+    } catch (e) {
+      // Point the error at the field that is actually on screen.
+      if (e instanceof cmd.DomainError && e.field === "label") throw new FieldError(f.mode === "many" ? "pattern" : "label", e.message);
+      throw e;
+    }
+  });
+  if (r) return r;
+  revalidatePath("/", "layout");
+  redirect(`/properties/${f.propertyId}`);
+}
+
+// ---------- Tenancies (SCR-40 / SCR-41) ----------
+
+export async function startTenancyAction(_: FormState, fd: FormData): Promise<FormState> {
+  let id = "";
+  const r = await guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const db = await getDb();
+    const [unit] = await db.select().from(t.units).where(eq(t.units.id, f.unitId ?? ""));
+    if (!unit) throw new FieldError("unitId", "Choose a unit");
+    const [p] = await db.select().from(t.properties).where(eq(t.properties.id, unit.propertyId));
+    const cur = p.currency;
+    const existing = f.existing === "on";
+    const startDate = date(f.startDate, "startDate");
+    const cycleDay = f.cycle === "movein" ? Math.min(Number(startDate.slice(8)), 28) : z.coerce.number().int().min(1).max(28).parse(f.cycleDay || "1");
+
+    const tenantId = f.tenantId || undefined;
+    const tenant = tenantId ? undefined : z.object({
+      fullName: str(120).min(1, "Enter the tenant's name"),
+      phone: opt(30),
+      email: z.union([z.literal(""), z.email("Enter a valid email")]).optional().transform((v) => v || undefined),
+    }).parse({ fullName: f.fullName, phone: f.phone, email: f.email });
+
+    const openingKind = f.openingKind;
+    const openingAmount = money(f.openingAmount, cur, "openingAmount");
+    id = await cmd.startTenancy(ctx, {
+      unitId: unit.id,
+      tenantId,
+      tenant,
+      coTenants: (f.coTenants ?? "").split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 10),
+      startDate,
+      existing,
+      billingStart: existing ? date(f.billingStart, "billingStart") : undefined,
+      cycleDay,
+      graceDays: z.coerce.number({ error: "Enter days to pay" }).int().min(0, "0 to 60 days").max(60, "0 to 60 days").parse(f.graceDays || "0"),
+      rentMinor: money(f.rent, cur, "rent", { required: true, positive: true }),
+      depositMinor: money(f.deposit, cur, "deposit"),
+      depositHeldMinor: existing ? money(f.depositHeld, cur, "depositHeld") : 0,
+      openingOwedMinor: existing && openingKind === "owes" ? openingAmount : 0,
+      openingAdvanceMinor: existing && openingKind === "ahead" ? openingAmount : 0,
+      leaseEndDate: f.leaseEnd ? date(f.leaseEnd, "leaseEnd") : undefined,
+    });
+  });
+  if (r) return r;
+  revalidatePath("/", "layout");
+  redirect(`/tenancies/${id}`);
+}
+
+// ---------- Money (SCR-43…47) ----------
+
+const METHOD = z.enum(PAY_METHODS, "Choose a method");
+
+export async function recordPaymentAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const cur = await tenancyCurrency(f.tenancyId);
+    const res = await cmd.recordPayment(ctx, {
+      tenancyId: f.tenancyId,
+      rentMinor: money(f.rent, cur, "rent"),
+      depositMinor: money(f.deposit, cur, "deposit"),
+      date: date(f.date, "date"),
+      method: METHOD.parse(f.method),
+      reference: f.reference?.trim().slice(0, 100),
+      note: f.note?.trim().slice(0, 500),
+    });
+    revalidatePath("/", "layout");
+    return {
+      ok: `Recorded · receipt ${res.receipts.join(", ")}${res.duplicate ? ". Possible duplicate: a payment with the same amount and date exists." : ""}`,
+      at: Date.now(),
+    };
+  });
+}
+
+export async function addChargeAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const cur = await tenancyCurrency(f.tenancyId);
+    await cmd.addCharge(ctx, {
+      tenancyId: f.tenancyId,
+      category: z.enum(Object.keys(CHARGE_CATEGORIES) as [string, ...string[]], "Choose a category").parse(f.category),
+      description: str(120).min(1, "Enter a description").parse(f.description),
+      amountMinor: money(f.amount, cur, "amount", { required: true, positive: true }),
+      date: date(f.date, "date"),
+      dueDate: date(f.dueDate, "dueDate"),
+    });
+    revalidatePath("/", "layout");
+    return { ok: "Charge added", at: Date.now() };
+  });
+}
+
+export async function addCreditAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const cur = await tenancyCurrency(f.tenancyId);
+    await cmd.addCredit(ctx, {
+      tenancyId: f.tenancyId,
+      category: z.enum(Object.keys(CREDIT_CATEGORIES) as [string, ...string[]], "Choose a type").parse(f.category),
+      amountMinor: money(f.amount, cur, "amount", { required: true, positive: true }),
+      date: date(f.date, "date"),
+      reason: str(200).min(1, "Enter a reason").parse(f.reason),
+    });
+    revalidatePath("/", "layout");
+    return { ok: "Discount recorded", at: Date.now() };
+  });
+}
+
+export async function voidEntryAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    await cmd.voidEntry(ctx, { entryId: f.entryId, reason: str(200).min(1, "Enter a reason").parse(f.reason) });
+    revalidatePath("/", "layout");
+    return { ok: "Entry voided", at: Date.now() };
+  });
+}
+
+// ---------- Move-out (SCR-50/51) ----------
+
+export async function moveOutAction(_: FormState, fd: FormData): Promise<FormState> {
+  const f = form(fd);
+  const r = await guard(async () => {
+    const ctx = await requireCtx();
+    const cur = await tenancyCurrency(f.tenancyId);
+    const deductions: cmd.Deduction[] = [];
+    for (let i = 0; i < 10; i++) {
+      if (!f[`dAmount${i}`]?.trim() && !f[`dReason${i}`]?.trim()) continue;
+      deductions.push({
+        category: z.enum(["DAMAGE", "CLEANING", "OTHER"]).parse(f[`dCategory${i}`]),
+        amountMinor: money(f[`dAmount${i}`], cur, `dAmount${i}`, { required: true, positive: true }),
+        reason: str(120).min(1, "Describe the deduction").parse(f[`dReason${i}`]),
+      });
+    }
+    await cmd.finalizeMoveOut(ctx, {
+      tenancyId: f.tenancyId,
+      moveOut: date(f.moveOut, "moveOut"),
+      deductions,
+      refundNow: f.refundNow === "on",
+      refundMethod: f.refundNow === "on" ? METHOD.parse(f.refundMethod) : "CASH",
+      refundDate: f.refundNow === "on" ? date(f.refundDate, "refundDate") : f.moveOut,
+    });
+  });
+  if (r) return r;
+  revalidatePath("/", "layout");
+  redirect(`/tenancies/${f.tenancyId}`);
+}
+
+// ---------- Tenant and tenancy changes (SCR-31, SCR-42 actions) ----------
+
+const phone = opt(30).refine((v) => !v || /^[+\d\s()-]{5,30}$/.test(v), "Enter a valid phone number");
+
+export async function updateTenantAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const v = z.object({
+      fullName: str(120).min(1, "Enter the tenant's name"),
+      phone, altPhone: phone,
+      email: z.union([z.literal(""), z.email("Enter a valid email")]).optional().transform((x) => x || undefined),
+      address: opt(300), emergencyName: opt(120), emergencyPhone: phone, notes: opt(2000),
+    }).parse(f);
+    await cmd.updateTenant(ctx, f.tenantId, v);
+    revalidatePath("/", "layout");
+    return { ok: "Tenant details saved", at: Date.now() };
+  });
+}
+
+export async function updateTermsAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    await cmd.updateTerms(ctx, {
+      tenancyId: f.tenancyId,
+      leaseEndDate: f.leaseEnd ? date(f.leaseEnd, "leaseEnd") : undefined,
+      graceDays: z.coerce.number({ error: "Enter days to pay" }).int().min(0, "0 to 60 days").max(60, "0 to 60 days").parse(f.graceDays || "0"),
+      notes: opt(2000).parse(f.notes),
+    });
+    revalidatePath("/", "layout");
+    return { ok: "Terms saved", at: Date.now() };
+  });
+}
+
+export async function changeRentAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const cur = await tenancyCurrency(f.tenancyId);
+    const n = await cmd.changeRent(ctx, {
+      tenancyId: f.tenancyId,
+      effectiveFrom: date(f.effectiveFrom, "effectiveFrom"),
+      rentMinor: money(f.rent, cur, "rent", { required: true, positive: true }),
+      reason: opt(200).parse(f.reason),
+    });
+    revalidatePath("/", "layout");
+    return { ok: n ? `Rent changed · ${n} ${n === 1 ? "adjustment" : "adjustments"} added for months already charged` : "Rent changed", at: Date.now() };
+  });
+}
+
+export async function giveNoticeAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    await cmd.giveNotice(ctx, {
+      tenancyId: f.tenancyId,
+      noticeDate: date(f.noticeDate, "noticeDate"),
+      plannedMoveOut: date(f.plannedMoveOut, "plannedMoveOut"),
+      givenBy: z.enum(["TENANT", "LANDLORD"]).parse(f.givenBy),
+    });
+    revalidatePath("/", "layout");
+    return { ok: "Notice recorded", at: Date.now() };
+  });
+}
+
+export async function withdrawNoticeAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    await cmd.withdrawNotice(ctx, String(fd.get("tenancyId")));
+    revalidatePath("/", "layout");
+    return { ok: "Notice withdrawn", at: Date.now() };
+  });
+}
