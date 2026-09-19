@@ -14,7 +14,8 @@ export type DB = PgliteDatabase<typeof schema>;
 const g = globalThis as unknown as { __db?: Promise<DB> };
 
 async function open(): Promise<DB> {
-  const dataDir = path.join(process.cwd(), ".data", "pglite");
+  // RENT_DATA_DIR lets tests use their own database and never touch yours.
+  const dataDir = process.env.RENT_DATA_DIR ?? path.join(process.cwd(), ".data", "pglite");
   mkdirSync(dataDir, { recursive: true });
   const client = await PGlite.create({
     dataDir,
