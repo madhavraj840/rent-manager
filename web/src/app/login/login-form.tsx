@@ -5,7 +5,7 @@ import { sendCodeAction, verifyCodeAction } from "@/app/actions";
 import { Field, Input, Submit, useActionForm } from "@/components/form";
 
 // Step 1: email → code is sent. Step 2: type the code → signed in.
-export function LoginForm() {
+export function LoginForm({ linkFailed }: { linkFailed?: boolean }) {
   const [email, setEmail] = useState("");
   const send = useActionForm(sendCodeAction);
   const verify = useActionForm(verifyCodeAction);
@@ -14,11 +14,15 @@ export function LoginForm() {
   return sent ? (
     <form onSubmit={verify.onSubmit} className="mt-6 space-y-4">
       <p role="status" className="rounded-md bg-primary-soft px-3 py-2 text-sm font-medium text-primary">{send.state!.ok}</p>
+      <p className="text-sm">
+        Open the email <span className="font-medium">in this same browser</span> and click the sign-in link. You come straight back here, signed in.
+      </p>
+      <p className="text-sm text-fg-2">If the email shows a number code instead, type it here:</p>
       <input type="hidden" name="email" value={email} />
       <Field label="Code from the email" name="code" state={verify.state}>
         <Input name="code" state={verify.state} inputMode="numeric" autoComplete="one-time-code" maxLength={12} className="num tracking-widest" required autoFocus />
       </Field>
-      <Submit pending={verify.pending} className="w-full">Sign in</Submit>
+      <Submit pending={verify.pending} className="w-full">Sign in with the code</Submit>
       <p className="text-[13px] text-fg-2">
         No email? Check the spam folder, or{" "}
         <button type="button" onClick={() => location.reload()} className="font-medium text-primary hover:underline">use a different email</button>.
@@ -26,10 +30,15 @@ export function LoginForm() {
     </form>
   ) : (
     <form onSubmit={send.onSubmit} className="mt-6 space-y-4">
+      {linkFailed && (
+        <p role="alert" className="rounded-md bg-overdue-soft px-3 py-2 text-sm font-medium text-overdue">
+          That sign-in link didn&apos;t work. It may be old, already used, or opened in a different browser. Ask for a new one below.
+        </p>
+      )}
       <Field label="Email" name="email" state={send.state}>
         <Input type="email" name="email" state={send.state} value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required autoFocus />
       </Field>
-      <Submit pending={send.pending} className="w-full">Send me a code</Submit>
+      <Submit pending={send.pending} className="w-full">Email me a sign-in link</Submit>
     </form>
   );
 }

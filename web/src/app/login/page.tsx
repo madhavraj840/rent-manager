@@ -7,7 +7,7 @@ import { LoginForm } from "./login-form";
 export const metadata: Metadata = { title: "Sign in" };
 
 // SCR-01 Sign in with an emailed code. Local mode has no sign-in.
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   if (!cloudMode() || (await authUser())) redirect("/dashboard");
   return (
     <main className="flex min-h-screen items-start justify-center px-4 py-12 sm:items-center">
@@ -17,8 +17,8 @@ export default async function LoginPage() {
           <span className="font-semibold">Rent Manager</span>
         </div>
         <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
-        <p className="mt-1 text-sm text-fg-2">Enter your email. We send you a code; type it here. No password needed.</p>
-        <LoginForm />
+        <p className="mt-1 text-sm text-fg-2">Enter your email. We email you a sign-in link. No password needed.</p>
+        <LoginForm linkFailed={(await searchParams).link === "failed"} />
       </div>
     </main>
   );

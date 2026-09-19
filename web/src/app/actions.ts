@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
@@ -587,13 +588,17 @@ export async function restoreDocumentAction(fd: FormData) {
 export async function sendCodeAction(_: FormState, fd: FormData): Promise<FormState> {
   return guard(async () => {
     const email = z.email("Enter a valid email").parse(String(fd.get("email") ?? "").trim().toLowerCase());
-    const { error } = await (await supabaseServer()).auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+    // The email's link comes back to /auth/callback on this same website (local or online).
+    const h = await headers();
+    const origin = `${h.get("x-forwarded-proto") ?? "http"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
+    const { error } = await (await supabaseServer()).auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: `${origin}/auth/callback` } });
     if (error) {
-      if (error.status === 429) throw new FieldError("email", "Too many codes were asked for. Wait a minute, then try again.");
+      if (error.status === 429) throw new FieldError("email", "Too many emails were asked for. Wait a few minutes, then try again.");
+      if (error.code === "otp_disabled" || error.code === "signup_disabled") throw new FieldError("email", "There is no account for this email. Check the address, or ask the owner to add you.");
       console.error("sendCode:", error.status, error.code);
       throw new FieldError("email", "The code could not be sent. Check the email address and try again.");
     }
-    return { ok: `We sent a code to ${email}. It can take a minute to arrive.`, at: Date.now() };
+    return { ok: `We sent an email to ${email}. It can take a minute to arrive.`, at: Date.now() };
   });
 }
 
