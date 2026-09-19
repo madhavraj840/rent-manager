@@ -3,14 +3,15 @@ import Link from "next/link";
 import { Check } from "lucide-react";
 import { addDays } from "@/lib/money";
 import { loadSample } from "@/app/actions";
-import { loadPortfolio, monthSummary } from "@/server/queries";
+import { expensesIn, loadPortfolio, monthSummary } from "@/server/queries";
 import { Card, Empty, PageHeader, TenancyRow, buttonClass, longDate, money, shortDate } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
 // SCR-10 Home / Dashboard (09 §4, 13 §2)
 export default async function DashboardPage() {
-  const { ctx, properties, units, current } = await loadPortfolio();
+  const p = await loadPortfolio();
+  const { ctx, properties, units, current } = p;
   if (!current.length) return <Onboarding hasProperty={properties.length > 0} hasUnits={units.length > 0} />;
 
   const ym = ctx.today.slice(0, 7);
@@ -41,8 +42,9 @@ export default async function DashboardPage() {
         const s = monthSummary(mine, ym);
         const pct = s.billed ? Math.min(100, Math.round((s.collected / s.billed) * 100)) : 0;
         const overdueCount = mine.filter((v) => v.balance.overdue > 0).length;
+        const spent = expensesIn(p, ym, cur);
         return (
-          <div key={cur} className="mb-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div key={cur} className="mb-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <Stat label={`Collected this month${currencies.length > 1 ? ` · ${cur}` : ""}`} value={money(s.collected, cur)}>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Collected of billed">
                 <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
@@ -57,6 +59,9 @@ export default async function DashboardPage() {
             </Stat>
             <Stat label="Deposits held" value={money(s.depositsHeld, cur)}>
               <p className="mt-1.5 text-[13px] text-fg-2">Refundable at move-out</p>
+            </Stat>
+            <Stat label="Net this month" value={money(s.collected - spent, cur)} tone={s.collected - spent < 0 ? "text-overdue" : undefined}>
+              <p className="num mt-1.5 text-[13px] text-fg-2"><Link href="/expenses" className="hover:underline">{money(spent, cur)} spent</Link></p>
             </Stat>
           </div>
         );

@@ -13,3 +13,8 @@ export const PROPERTY_TYPES = {
 export const UNIT_TYPES = { FLAT: "Flat", HOUSE: "House", ROOM: "Room", BED: "Bed", SHOP: "Shop", OFFICE: "Office", WAREHOUSE: "Warehouse", PARKING: "Parking", OTHER: "Other" } as const;
 
 export const label = <T extends Record<string, string>>(map: T, code?: string | null) => (code && code in map ? map[code as keyof T] : code ?? "");
+
+export const EXPENSE_CATEGORIES = {
+  REPAIR: "Repair", MAINTENANCE: "Maintenance", UTILITY: "Utility bill", PROPERTY_TAX: "Property tax", INSURANCE: "Insurance",
+  SALARY: "Salary", COMMISSION: "Commission", LEGAL: "Legal", LOAN_INTEREST: "Loan interest", OTHER: "Other",
+} as const;

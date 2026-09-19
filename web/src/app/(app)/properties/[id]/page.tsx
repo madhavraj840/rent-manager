@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { loadPortfolio, monthSummary } from "@/server/queries";
+import { expensesIn, loadPortfolio, monthSummary } from "@/server/queries";
 import { PROPERTY_TYPES, UNIT_TYPES, label } from "@/lib/labels";
 import { Card, Chip, Empty, PageHeader, TenancyStatus, buttonClass, money, shortDate } from "@/components/ui";
 
@@ -10,7 +10,8 @@ export const metadata: Metadata = { title: "Property" };
 // SCR-21 Property detail
 export default async function PropertyPage({ params }: PageProps<"/properties/[id]">) {
   const { id } = await params;
-  const { ctx, properties, units, views } = await loadPortfolio();
+  const portfolio = await loadPortfolio();
+  const { ctx, properties, units, views } = portfolio;
   const p = properties.find((x) => x.id === id);
   if (!p) notFound();
   const pv = views.filter((v) => v.property.id === p.id);
@@ -18,6 +19,7 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
   const past = pv.filter((v) => v.tenancy.status !== "ACTIVE");
   const s = monthSummary(current, ctx.today.slice(0, 7));
   const pu = units.filter((u) => u.propertyId === p.id);
+  const spent = expensesIn(portfolio, ctx.today.slice(0, 7), p.currency, p.id);
   const addUnits = <Link href={`/properties/${p.id}/units`} className={buttonClass.primary}>Add units</Link>;
 
   return (
@@ -26,14 +28,16 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
       <PageHeader
         title={p.name}
         sub={[label(PROPERTY_TYPES, p.type), [p.addressLine1, p.city].filter(Boolean).join(", "), p.currency].filter(Boolean).join(" · ")}
-        actions={<><Link href={`/properties/${p.id}/edit`} className={buttonClass.secondary}>Edit</Link>{addUnits}</>}
+        actions={<><Link href={`/expenses?property=${p.id}`} className={buttonClass.secondary}>Expenses</Link><Link href={`/properties/${p.id}/edit`} className={buttonClass.secondary}>Edit</Link>{addUnits}</>}
       />
 
-      <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-3 lg:grid-cols-6">
         {[
           ["Due this month", money(s.billed, p.currency)],
           ["Collected this month", money(s.collected, p.currency)],
           ["Outstanding", money(s.outstanding, p.currency)],
+          ["Spent this month", money(spent, p.currency)],
+          ["Net this month", money(s.collected - spent, p.currency)],
           ["Occupied", `${current.length} of ${pu.length}`],
         ].map(([k, v]) => (
           <div key={k} className="bg-surface px-4 py-3">

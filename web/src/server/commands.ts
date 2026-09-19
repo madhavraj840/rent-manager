@@ -558,3 +558,59 @@ export function changeRent(ctx: Ctx, input: { tenancyId: string; effectiveFrom: 
     return { entityId: tn.id, changes: { ...input, adjustments: lines.length }, result: lines.length };
   });
 }
+
+// ---------- Expenses (F-EXP-1): not tenant-facing, so editable (audited) as well as voidable ----------
+
+export interface ExpenseInput {
+  propertyId?: string; unitId?: string; category: string; amountMinor: number; expenseDate: string;
+  payee?: string; method?: string; reference?: string; note?: string;
+}
+
+async function expenseScope(tx: Tx, ctx: Ctx, input: ExpenseInput) {
+  if (input.expenseDate > addDays(ctx.today, 1)) throw new DomainError("VALIDATION", "The date can't be in the future.", "expenseDate");
+  if (!input.propertyId) {
+    if (input.unitId) throw new DomainError("VALIDATION", "Choose the property for this unit.", "propertyId");
+    return ctx.workspace.defaultCurrency;
+  }
+  const [p] = await tx.select().from(t.properties).where(and(eq(t.properties.id, input.propertyId), eq(t.properties.workspaceId, ctx.workspace.id)));
+  if (!p) throw new DomainError("NOT_FOUND", "Property not found.", "propertyId");
+  if (input.unitId) {
+    const [u] = await tx.select({ id: t.units.id }).from(t.units).where(and(eq(t.units.id, input.unitId), eq(t.units.propertyId, p.id)));
+    if (!u) throw new DomainError("VALIDATION", "That unit is not in this property.", "unitId");
+  }
+  return p.currency;
+}
+
+const expenseRow = (input: ExpenseInput) => ({
+  propertyId: input.propertyId ?? null, unitId: input.unitId ?? null, category: input.category, amountMinor: input.amountMinor,
+  expenseDate: input.expenseDate, payee: input.payee ?? null, method: input.method ?? null, reference: input.reference ?? null, note: input.note ?? null,
+});
+
+export function addExpense(ctx: Ctx, input: ExpenseInput) {
+  return run(ctx, "expense.create", "expense", async (tx) => {
+    const currency = await expenseScope(tx, ctx, input);
+    const [e] = await tx.insert(t.expenses).values({ ...expenseRow(input), currency, workspaceId: ctx.workspace.id, createdBy: ctx.userId }).returning();
+    return { entityId: e.id, changes: input, result: e.id };
+  });
+}
+
+export function updateExpense(ctx: Ctx, id: string, input: ExpenseInput) {
+  return run(ctx, "expense.update", "expense", async (tx) => {
+    const [before] = await tx.select().from(t.expenses).where(and(eq(t.expenses.id, id), eq(t.expenses.workspaceId, ctx.workspace.id)));
+    if (!before) throw new DomainError("NOT_FOUND", "Expense not found.");
+    if (before.status === "VOID") throw new DomainError("ALREADY_VOID", "A voided expense can't be edited.");
+    const currency = await expenseScope(tx, ctx, input);
+    await tx.update(t.expenses).set({ ...expenseRow(input), currency, updatedBy: ctx.userId }).where(eq(t.expenses.id, id));
+    return { entityId: id, changes: { before, after: input }, result: id };
+  });
+}
+
+export function voidExpense(ctx: Ctx, id: string, reason: string) {
+  return run(ctx, "expense.void", "expense", async (tx) => {
+    const [e] = await tx.select().from(t.expenses).where(and(eq(t.expenses.id, id), eq(t.expenses.workspaceId, ctx.workspace.id)));
+    if (!e) throw new DomainError("NOT_FOUND", "Expense not found.");
+    if (e.status === "VOID") throw new DomainError("ALREADY_VOID", "This expense is already void.");
+    await tx.update(t.expenses).set({ status: "VOID", voidReason: reason, updatedBy: ctx.userId }).where(eq(t.expenses.id, id));
+    return { entityId: id, changes: { reason, amount: e.amountMinor }, result: id };
+  });
+}

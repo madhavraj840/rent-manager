@@ -222,6 +222,27 @@ export const ledgerEntries = app.table("ledger_entries", {
   uniqueIndex("ledger_generated_uq").on(t.generatedKey).where(sql`${t.generatedKey} is not null`),
 ]);
 
+export const expenses = app.table("expenses", {
+  id: id(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  propertyId: uuid("property_id").references(() => properties.id), // null = workspace-level
+  unitId: uuid("unit_id").references(() => units.id),
+  category: text("category").notNull(),
+  amountMinor: money("amount_minor").notNull(),
+  currency: text("currency").notNull(),
+  expenseDate: day("expense_date").notNull(),
+  payee: text("payee"),
+  method: text("method"),
+  reference: text("reference"),
+  note: text("note"),
+  status: text("status").notNull().default("ACTIVE"),
+  voidReason: text("void_reason"),
+  ...sync(),
+}, (t) => [
+  index("expenses_ws_date_ix").on(t.workspaceId, t.expenseDate),
+  index("expenses_property_date_ix").on(t.propertyId, t.expenseDate),
+]);
+
 export const auditEvents = app.table("audit_events", {
   id: id(),
   workspaceId: uuid("workspace_id").notNull(),
@@ -240,3 +261,4 @@ export type Unit = typeof units.$inferSelect;
 export type Tenant = typeof tenants.$inferSelect;
 export type Tenancy = typeof tenancies.$inferSelect;
 export type LedgerRow = typeof ledgerEntries.$inferSelect;
+export type Expense = typeof expenses.$inferSelect;

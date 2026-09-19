@@ -70,6 +70,17 @@ export async function seedSample(ctx: cmd.Ctx) {
     openingOwedMinor: r(9000), openingAdvanceMinor: 0,
   });
 
+  // Running costs, so the dashboard shows net income.
+  const costs: [string | undefined, string, number, string, number, number][] = [
+    [green, "MAINTENANCE", 6500, "Lift AMC · Otis", -1, 5], [green, "UTILITY", 3200, "BESCOM common area", -1, 12],
+    [pg, "SALARY", 12000, "Cook · Lakshmamma", -1, 1], [green, "REPAIR", 1800, "Ravi Plumbing", 0, 3],
+    [pg, "SALARY", 12000, "Cook · Lakshmamma", 0, 1], [pg, "UTILITY", 4100, "BESCOM", 0, 10], [undefined, "OTHER", 950, "Accounting app", 0, 2],
+  ];
+  for (const [propertyId, category, amount, payee, offset, day] of costs) {
+    const d = m(offset, day);
+    if (d <= ctx.today) await cmd.addExpense(ctx, { propertyId, category, amountMinor: r(amount), expenseDate: d, payee, method: "UPI" });
+  }
+
   // One mistaken duplicate that was voided.
   const [room2] = await db.select().from(t.tenancies).where(and(eq(t.tenancies.workspaceId, ctx.workspace.id), eq(t.tenancies.unitId, unit("Room 2"))));
   const res = await cmd.recordPayment(ctx, { tenancyId: room2.id, rentMinor: r(8500), depositMinor: 0, date: m(-1, 7), method: "UPI" });

@@ -25,7 +25,7 @@ Delete the `.data` folder to start over. Schema: `src/db/schema.ts` + `db/migrat
 | `src/server/queries.ts` | Reads for pages; balances derived from the ledger |
 | `src/server/reports.ts` | Reports (docs/13): collections, outstanding, deposits, rent roll, statement; CSV |
 | `src/app/actions.ts` | Form handlers (Zod) → commands |
-| `src/app/(app)/…` | Pages: dashboard, properties, tenants, tenancies, move-out, search, reports |
+| `src/app/(app)/…` | Pages: dashboard, properties, tenants, tenancies, move-out, expenses, search, reports |
 | `src/app/print/…` | Printable receipt and statement (browser Print → Save as PDF) |
 | `src/app/export/…` | CSV downloads |
 

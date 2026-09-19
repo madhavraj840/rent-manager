@@ -41,7 +41,7 @@ export const loadPortfolio = cache(async () => {
   await generateDueCharges(ctx);
   const db = await getDb();
   const ws = ctx.workspace.id;
-  const [properties, units, tenancies, parties, tenants, ledger, revisions] = await Promise.all([
+  const [properties, units, tenancies, parties, tenants, ledger, revisions, expenses] = await Promise.all([
     db.select().from(t.properties).where(and(eq(t.properties.workspaceId, ws), isNull(t.properties.deletedAt))).orderBy(asc(t.properties.name)),
     db.select().from(t.units).where(and(eq(t.units.workspaceId, ws), isNull(t.units.deletedAt))).orderBy(asc(t.units.label)),
     db.select().from(t.tenancies).where(and(eq(t.tenancies.workspaceId, ws), ne(t.tenancies.status, "CANCELLED"), isNull(t.tenancies.deletedAt))),
@@ -49,6 +49,7 @@ export const loadPortfolio = cache(async () => {
     db.select().from(t.tenants).where(and(eq(t.tenants.workspaceId, ws), isNull(t.tenants.deletedAt))).orderBy(asc(t.tenants.fullName)),
     db.select().from(t.ledgerEntries).where(eq(t.ledgerEntries.workspaceId, ws)),
     db.select().from(t.rentRevisions).where(and(eq(t.rentRevisions.workspaceId, ws), isNull(t.rentRevisions.deletedAt))).orderBy(desc(t.rentRevisions.effectiveFrom)),
+    db.select().from(t.expenses).where(and(eq(t.expenses.workspaceId, ws), isNull(t.expenses.deletedAt))).orderBy(desc(t.expenses.expenseDate), desc(t.expenses.createdAt)),
   ]);
 
   const byTenancy = Map.groupBy(ledger, (r) => r.tenancyId);
@@ -80,7 +81,7 @@ export const loadPortfolio = cache(async () => {
     };
   });
 
-  return { ctx, properties, units, tenants, views, current: views.filter((v) => v.tenancy.status === "ACTIVE") };
+  return { ctx, properties, units, tenants, views, expenses, current: views.filter((v) => v.tenancy.status === "ACTIVE") };
 });
 
 export type Portfolio = Awaited<ReturnType<typeof loadPortfolio>>;
@@ -100,3 +101,9 @@ export function monthSummary(views: TenancyView[], ym: string) {
     depositsHeld: views.reduce((s, v) => s + v.balance.depositHeld, 0),
   };
 }
+
+/** Active expenses in a month (YYYY-MM) for one currency, optionally one property (13 §2). */
+export const expensesIn = (p: Portfolio, ym: string, currency: string, propertyId?: string) =>
+  p.expenses
+    .filter((e) => e.status === "ACTIVE" && e.currency === currency && e.expenseDate.startsWith(ym) && (!propertyId || e.propertyId === propertyId))
+    .reduce((s, e) => s + e.amountMinor, 0);

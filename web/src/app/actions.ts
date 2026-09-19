@@ -7,7 +7,7 @@ import { z } from "zod";
 import { getDb, t } from "@/db";
 import { parseMoney } from "@/lib/money";
 import { unitLabels } from "@/lib/units";
-import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, PAY_METHODS, PROPERTY_TYPES as PT, UNIT_TYPES as UT } from "@/lib/labels";
+import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, EXPENSE_CATEGORIES, PAY_METHODS, PROPERTY_TYPES as PT, UNIT_TYPES as UT } from "@/lib/labels";
 import * as cmd from "@/server/commands";
 import { requireCtx } from "@/server/queries";
 import { seedSample } from "@/server/sample";
@@ -375,5 +375,47 @@ export async function withdrawNoticeAction(_: FormState, fd: FormData): Promise<
     await cmd.withdrawNotice(ctx, String(fd.get("tenancyId")));
     revalidatePath("/", "layout");
     return { ok: "Notice withdrawn", at: Date.now() };
+  });
+}
+
+// ---------- Expenses (SCR-72) ----------
+
+export async function saveExpenseAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const db = await getDb();
+    const propertyId = f.propertyId || undefined;
+    let currency = ctx.workspace.defaultCurrency;
+    if (propertyId) {
+      const [p] = await db.select({ currency: t.properties.currency }).from(t.properties).where(eq(t.properties.id, propertyId));
+      if (!p) throw new FieldError("propertyId", "Choose a property");
+      currency = p.currency;
+    }
+    const input: cmd.ExpenseInput = {
+      propertyId,
+      unitId: propertyId ? f.unitId || undefined : undefined,
+      category: z.enum(Object.keys(EXPENSE_CATEGORIES) as [string, ...string[]], "Choose a category").parse(f.category),
+      amountMinor: money(f.amount, currency, "amount", { required: true, positive: true }),
+      expenseDate: date(f.expenseDate, "expenseDate"),
+      payee: opt(120).parse(f.payee),
+      method: f.method ? METHOD.parse(f.method) : undefined,
+      reference: opt(100).parse(f.reference),
+      note: opt(500).parse(f.note),
+    };
+    if (f.id) await cmd.updateExpense(ctx, f.id, input);
+    else await cmd.addExpense(ctx, input);
+    revalidatePath("/", "layout");
+    return { ok: f.id ? "Expense updated" : "Expense added", at: Date.now() };
+  });
+}
+
+export async function voidExpenseAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    await cmd.voidExpense(ctx, f.id, str(200).min(1, "Enter a reason").parse(f.reason));
+    revalidatePath("/", "layout");
+    return { ok: "Expense voided", at: Date.now() };
   });
 }

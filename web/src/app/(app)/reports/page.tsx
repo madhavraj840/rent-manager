@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { loadPortfolio } from "@/server/queries";
-import { REPORTS, buildReport, isDay, type ReportType } from "@/server/reports";
+import { RANGED, REPORTS, buildReport, isDay, type ReportType } from "@/server/reports";
 import { DataTable } from "@/components/data-table";
 import { Card, PageHeader, buttonClass } from "@/components/ui";
 
@@ -13,6 +13,7 @@ const DESCRIPTIONS: Record<ReportType, string> = {
   outstanding: "Who owes money today, grouped by how many days past the due date.",
   deposits: "Deposits are held for tenants and are not income.",
   "rent-roll": "Every unit, who is in it and what it earns.",
+  expenses: "Money spent on the properties between two dates.",
 };
 
 // 13 §3–6, each with CSV export
@@ -23,7 +24,8 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   const from = isDay(sp.from) ? sp.from : p.ctx.today.slice(0, 8) + "01";
   const to = isDay(sp.to) ? sp.to : p.ctx.today;
   const table = buildReport(p, type, from, to);
-  const qs = type === "collections" ? `?from=${from}&to=${to}` : "";
+  const ranged = RANGED.includes(type);
+  const qs = ranged ? `?from=${from}&to=${to}` : "";
 
   return (
     <>
@@ -40,9 +42,9 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
           </Link>
         ))}
       </nav>
-      {type === "collections" && (
+      {ranged && (
         <form action="/reports" className="mb-4 flex flex-wrap items-end gap-3 text-sm">
-          <input type="hidden" name="type" value="collections" />
+          <input type="hidden" name="type" value={type} />
           <label className="flex flex-col gap-1 font-medium">From
             <input type="date" name="from" defaultValue={from} className="h-9 rounded-md border border-line-strong bg-surface px-2.5 font-normal" />
           </label>

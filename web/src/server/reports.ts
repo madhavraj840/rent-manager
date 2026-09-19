@@ -1,6 +1,6 @@
 import "server-only";
 import { currencyDigits, daysBetween, runningBalances } from "@/lib/money";
-import { METHODS, label } from "@/lib/labels";
+import { EXPENSE_CATEGORIES, METHODS, label } from "@/lib/labels";
 import type { Portfolio, TenancyView } from "./queries";
 
 // Reports from docs/13. One table shape serves the page, the print view and CSV.
@@ -15,7 +15,11 @@ export const REPORTS = {
   outstanding: "Outstanding",
   deposits: "Deposits",
   "rent-roll": "Rent roll",
+  expenses: "Expenses",
 } as const;
+
+/** Reports filtered by a date range rather than "as of today". */
+export const RANGED: ReportType[] = ["collections", "expenses"];
 export type ReportType = keyof typeof REPORTS;
 
 const m = (minor: number, currency: string): Money => ({ minor, currency });
@@ -115,6 +119,20 @@ export function rentRoll(p: Portfolio): Table {
   };
 }
 
+/** REP-007: active expenses in a date range; workspace-level ones show "All properties". */
+export function expenseReport(p: Portfolio, from: string, to: string, propertyId?: string): Table {
+  const list = p.expenses.filter((e) => e.status === "ACTIVE" && e.expenseDate >= from && e.expenseDate <= to
+    && (propertyId === undefined || (propertyId === "" ? !e.propertyId : e.propertyId === propertyId)));
+  const prop = (id: string | null) => (id ? p.properties.find((x) => x.id === id)?.name : "All properties");
+  const unit = (id: string | null) => (id ? p.units.find((x) => x.id === id)?.label : "");
+  return {
+    columns: [{ label: "Date" }, { label: "Property", wrap: true }, { label: "Unit" }, { label: "Category" }, { label: "Payee", wrap: true },
+      { label: "Method" }, { label: "Reference" }, { label: "Amount", money: true }, { label: "Note", wrap: true }],
+    rows: list.map((e) => [e.expenseDate, prop(e.propertyId), unit(e.unitId), label(EXPENSE_CATEGORIES, e.category), e.payee,
+      label(METHODS, e.method), e.reference, m(e.amountMinor, e.currency), e.note]),
+  };
+}
+
 /** REP-005: one tenancy's rent account with running balance, oldest first (13 §7). */
 export function statement(v: TenancyView): Table {
   const rowById = new Map(v.rows.map((r) => [r.id, r]));
@@ -138,6 +156,7 @@ export function buildReport(p: Portfolio, type: ReportType, from: string, to: st
   if (type === "collections") return collections(p, from, to);
   if (type === "outstanding") return outstanding(p);
   if (type === "deposits") return deposits(p);
+  if (type === "expenses") return expenseReport(p, from, to);
   return rentRoll(p);
 }
 
