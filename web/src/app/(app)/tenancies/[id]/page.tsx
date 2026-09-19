@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { FileText, MessageCircle, Phone } from "lucide-react";
 import { nextPeriodStart, periodStartFor, runningBalances } from "@/lib/money";
 import { METHODS, label } from "@/lib/labels";
-import { loadPortfolio, meterViews } from "@/server/queries";
+import { documentsFor, loadPortfolio, meterViews } from "@/server/queries";
+import { DocumentsCard } from "@/components/documents";
 import { MetersCard } from "@/components/meters";
 import { Card, Chip, Crumbs, TenancyStatus, buttonClass, linkClass, longDate, money, paymentContext, shortDate } from "@/components/ui";
 import { AddCharge, AddCredit, ChangeRent, EditTenant, EditTerms, GiveNotice, RecordPayment, VoidEntry, WithdrawNotice } from "@/components/tenancy-actions";
@@ -33,6 +34,7 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
   const history = runningBalances(v.entries).reverse();
   const deposits = v.rows.filter((r) => r.account === "DEPOSIT" && r.kind !== "CHARGE").sort((a, b2) => b2.entryDate.localeCompare(a.entryDate));
   const signature = ctx.userName ?? ctx.workspace.name;
+  const docs = await documentsFor([{ type: "TENANCY", ids: [tn.id] }, { type: "TENANT", ids: v.people.map((p) => p.id) }]);
 
   // Reminder text (12 §5)
   const oldest = b.charges.find((c) => c.remaining > 0);
@@ -230,6 +232,12 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
             {tn.notes && <><dt className="text-fg-2">Notes</dt><dd className="whitespace-pre-line">{tn.notes}</dd></>}
           </dl>
         </Card>
+      </div>
+
+      <div className="mt-6">
+        <DocumentsCard docs={docs} readOnly={tn.status === "CLOSED"}
+          target={{ entityType: "TENANCY", entityId: tn.id, where: "this tenancy", person: primary && { id: primary.id, name: primary.fullName } }}
+          owners={Object.fromEntries(v.people.map((p) => [p.id, p.fullName]))} />
       </div>
 
       {tn.status === "ACTIVE" && (

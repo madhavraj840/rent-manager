@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { expensesIn, loadPortfolio, meterViews, monthSummary } from "@/server/queries";
+import { documentsFor, expensesIn, loadPortfolio, meterViews, monthSummary } from "@/server/queries";
+import { DocumentsCard } from "@/components/documents";
 import { MetersCard } from "@/components/meters";
 import { PROPERTY_TYPES, UNIT_TYPES, label } from "@/lib/labels";
 import { Card, Chevron, Chip, Crumbs, Empty, PageHeader, TenancyStatus, buttonClass, linkClass, money, shortDate } from "@/components/ui";
@@ -89,6 +90,10 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
 
       <div className="mt-6">
         <MetersCard list={meterViews(portfolio, { propertyId: p.id })} ctx={ctx} property={p} units={pu} roundHref={`/properties/${p.id}/readings`} />
+      </div>
+
+      <div className="mt-6">
+        <DocumentsCard docs={await documentsFor([{ type: "PROPERTY", ids: [p.id] }])} target={{ entityType: "PROPERTY", entityId: p.id, where: p.name }} />
       </div>
 
       {past.length > 0 && (

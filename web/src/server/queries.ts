@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
-import { and, asc, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { getDb, t } from "@/db";
 import { allocate } from "@/lib/money";
 import { generateDueCharges, toEntry, type Ctx } from "./commands";
@@ -143,3 +143,14 @@ export function meterViews(p: Portfolio, filter: { propertyId?: string; unitId?:
     });
 }
 export type MeterView = ReturnType<typeof meterViews>[number];
+
+export type DocRow = typeof t.documents.$inferSelect;
+
+/** Documents attached to any of these records, newest first; includes ones deleted in the last 30 days (restorable). */
+export async function documentsFor(parents: { type: string; ids: string[] }[]) {
+  const ctx = await requireCtx();
+  const db = await getDb();
+  const wanted = parents.filter((p) => p.ids.length).map((p) => and(eq(t.documents.entityType, p.type), inArray(t.documents.entityId, p.ids)));
+  if (!wanted.length) return [];
+  return db.select().from(t.documents).where(and(eq(t.documents.workspaceId, ctx.workspace.id), or(...wanted))).orderBy(desc(t.documents.createdAt));
+}

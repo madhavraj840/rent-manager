@@ -286,6 +286,25 @@ export const expenses = app.table("expenses", {
   index("expenses_property_date_ix").on(t.propertyId, t.expenseDate),
 ]);
 
+// Files live on disk under <data dir>/files/<storage_path> (ponytail: until Supabase Storage, D-030).
+export const documents = app.table("documents", {
+  id: id(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  propertyId: uuid("property_id").references(() => properties.id),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id").notNull(),
+  category: text("category").notNull(),
+  title: text("title"),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  storagePath: text("storage_path").notNull(),
+  sensitive: boolean("sensitive").notNull().default(false),
+  uploadStatus: text("upload_status").notNull().default("UPLOADED"),
+  uploadedAt: ts("uploaded_at"),
+  ...sync(),
+}, (t) => [index("documents_entity_ix").on(t.entityType, t.entityId)]);
+
 export const auditEvents = app.table("audit_events", {
   id: id(),
   workspaceId: uuid("workspace_id").notNull(),

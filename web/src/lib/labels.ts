@@ -21,3 +21,10 @@ export const EXPENSE_CATEGORIES = {
 
 export const METER_TYPES = { ELECTRICITY: "Electricity", WATER: "Water", GAS: "Gas", OTHER: "Other" } as const;
 export const UOMS = { KWH: "kWh", M3: "m³", LITRE: "litres", UNIT: "units" } as const;
+
+export const DOC_CATEGORIES = {
+  AGREEMENT: "Rent agreement", ID_PROOF: "ID proof", ADDRESS_PROOF: "Address proof", POLICE_VERIFICATION: "Police verification",
+  PAYMENT_PROOF: "Payment proof", BILL: "Bill", PHOTO: "Photo", PAYMENT_QR: "Payment QR", OTHER: "Other",
+} as const;
+/** Always sensitive (05 §2.19). They are about a person, so on a tenancy they are filed under the tenant and follow them to later tenancies. */
+export const PERSON_DOCS: readonly string[] = ["ID_PROOF", "ADDRESS_PROOF", "POLICE_VERIFICATION"];

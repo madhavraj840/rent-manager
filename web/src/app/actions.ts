@@ -7,7 +7,7 @@ import { z } from "zod";
 import { getDb, t } from "@/db";
 import { formatMoney, parseMoney, parseScaled } from "@/lib/money";
 import { unitLabels } from "@/lib/units";
-import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, EXPENSE_CATEGORIES, PAY_METHODS, PROPERTY_TYPES as PT, UNIT_TYPES as UT } from "@/lib/labels";
+import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, DOC_CATEGORIES, EXPENSE_CATEGORIES, PERSON_DOCS, PAY_METHODS, PROPERTY_TYPES as PT, UNIT_TYPES as UT } from "@/lib/labels";
 import * as cmd from "@/server/commands";
 import { requireCtx } from "@/server/queries";
 import { seedSample } from "@/server/sample";
@@ -524,4 +524,40 @@ export async function readingsRoundAction(_: FormState, fd: FormData): Promise<F
     const ok = saved ? `${saved} ${saved === 1 ? "reading" : "readings"} saved, ${charges} ${charges === 1 ? "bill" : "bills"} added to tenants' balances${amount ? ` (${amount})` : ""}` : undefined;
     return { ok, rows, error: Object.keys(rows).length ? `${Object.keys(rows).length} could not be saved. Check the highlighted rows.` : undefined, at: Date.now() };
   });
+}
+
+// ---------- Documents (SCR-75…77) ----------
+
+export async function uploadDocumentAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const file = fd.get("file");
+    if (!(file instanceof File) || !file.size) throw new FieldError("file", "Choose a file");
+    const category = z.enum(Object.keys(DOC_CATEGORIES) as [string, ...string[]], "Choose what this is").parse(f.category);
+    // On a tenancy, ID, address and police papers are filed under the tenant (personId) so they follow the person.
+    const toPerson = PERSON_DOCS.includes(category) && f.personId;
+    const entityType = toPerson ? "TENANT" : z.enum(["PROPERTY", "TENANT", "TENANCY"]).parse(f.entityType);
+    const { sensitive } = await cmd.addDocument(ctx, {
+      entityType, entityId: toPerson ? f.personId : f.entityId, category, title: opt(120).parse(f.title),
+      fileName: file.name, bytes: new Uint8Array(await file.arrayBuffer()),
+    });
+    revalidatePath("/", "layout");
+    return { ok: `Document added${sensitive ? " · marked sensitive" : ""} · shown under Documents`, at: Date.now() };
+  });
+}
+
+export async function deleteDocumentAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    await cmd.setDocumentDeleted(ctx, form(fd).id, true);
+    revalidatePath("/", "layout");
+    return { ok: "Document deleted · restore it from Recently deleted within 30 days", at: Date.now() };
+  });
+}
+
+export async function restoreDocumentAction(fd: FormData) {
+  const ctx = await requireCtx();
+  await cmd.setDocumentDeleted(ctx, form(fd).id, false);
+  revalidatePath("/", "layout");
 }

@@ -1,11 +1,13 @@
 import "server-only";
-import { and, eq, gte, inArray, isNull, sql } from "drizzle-orm";
-import { getDb, t, type DB } from "@/db";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { and, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { filesDir, getDb, t, type DB } from "@/db";
 import {
   addDays, allocate, formatMoney, formatScaled, moveOutCredit, nextPeriodStart, parseScaled, periodStartFor, rentSchedule, roundingUnit,
   utilityAmount, utilityDescription, type LedgerEntry,
 } from "@/lib/money";
-import { CREDIT_CATEGORIES } from "@/lib/labels";
+import { CREDIT_CATEGORIES, PERSON_DOCS } from "@/lib/labels";
 
 // Every write goes through run(): one transaction, workspace change sequence, version stamping, audit (06 §6).
 
@@ -762,4 +764,87 @@ export function voidReading(ctx: Ctx, readingId: string, reason: string) {
         .where(eq(t.ledgerEntries.id, charge.id));
     return { entityId: r.meterId, changes: { reading: r.id, reason, charge: charge?.id }, result: r.meterId };
   });
+}
+
+// ---------- Documents (F-DOC-1…3) ----------
+
+export const DOC_LIMITS = { maxBytes: 10 * 1024 * 1024, perParent: 50, quotaBytes: 1024 ** 3, keepDeletedDays: 30 };
+
+/** The file's real type from its first bytes; the browser's claimed type is not trusted. */
+export function sniffMime(b: Uint8Array): string | null {
+  const ascii = (from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x89 && ascii(1, 4) === "PNG") return "image/png";
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
+  if (ascii(0, 5) === "%PDF-") return "application/pdf";
+  return null;
+}
+
+export const docFile = (storagePath: string) => path.join(filesDir(), storagePath);
+
+const DOC_PARENTS = { PROPERTY: t.properties, TENANT: t.tenants, TENANCY: t.tenancies } as const;
+export type DocParent = keyof typeof DOC_PARENTS;
+
+export async function addDocument(ctx: Ctx, input: { entityType: DocParent; entityId: string; category: string; title?: string; fileName: string; bytes: Uint8Array }) {
+  const mimeType = sniffMime(input.bytes);
+  if (!mimeType) throw new DomainError("VALIDATION", "Choose a photo (JPG, PNG, WebP) or a PDF.", "file");
+  if (input.bytes.length > DOC_LIMITS.maxBytes) throw new DomainError("VALIDATION", "The file is larger than 10 MB. Choose a smaller file.", "file");
+  await purgeDeletedDocuments(ctx);
+  const id = crypto.randomUUID();
+  const storagePath = `ws/${ctx.workspace.id}/${id}`;
+  // The file is written first; if the record fails it is removed again, so no orphan row ever points at a missing file.
+  await mkdir(path.dirname(docFile(storagePath)), { recursive: true });
+  await writeFile(docFile(storagePath), input.bytes);
+  try {
+    return await run(ctx, "document.add", "document", async (tx) => {
+      const table = DOC_PARENTS[input.entityType];
+      const [parent] = await tx.select().from(table).where(and(eq(table.id, input.entityId), eq(table.workspaceId, ctx.workspace.id)));
+      if (!parent) throw new DomainError("NOT_FOUND", "The record this file belongs to was not found.");
+      const propertyId = "propertyId" in parent ? parent.propertyId : input.entityType === "PROPERTY" ? parent.id : null;
+      const live = and(eq(t.documents.workspaceId, ctx.workspace.id), isNull(t.documents.deletedAt));
+      const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(t.documents)
+        .where(and(live, eq(t.documents.entityType, input.entityType), eq(t.documents.entityId, input.entityId)));
+      if (n >= DOC_LIMITS.perParent) throw new DomainError("LIMIT", `This record already has ${DOC_LIMITS.perParent} documents. Delete some first.`, "file");
+      // Deleted files still use space until they are purged (F-DOC-3).
+      const [{ used }] = await tx.select({ used: sql<number>`coalesce(sum(size_bytes), 0)::float8` }).from(t.documents).where(eq(t.documents.workspaceId, ctx.workspace.id));
+      if (used + input.bytes.length > DOC_LIMITS.quotaBytes) throw new DomainError("QUOTA_EXCEEDED", "Storage full (1 GB). Delete old files or contact support.", "file");
+      const sensitive = PERSON_DOCS.includes(input.category);
+      await tx.insert(t.documents).values({
+        id, workspaceId: ctx.workspace.id, propertyId, entityType: input.entityType, entityId: input.entityId, category: input.category,
+        title: input.title ?? null, fileName: input.fileName.slice(0, 200), mimeType, sizeBytes: input.bytes.length, storagePath, sensitive,
+        uploadedAt: sql`now()`, createdBy: ctx.userId, updatedBy: ctx.userId,
+      });
+      return { entityId: id, changes: { entityType: input.entityType, entityId: input.entityId, category: input.category, sizeBytes: input.bytes.length }, result: { id, sensitive } };
+    });
+  } catch (e) {
+    await rm(docFile(storagePath), { force: true });
+    throw e;
+  }
+}
+
+export function setDocumentDeleted(ctx: Ctx, id: string, deleted: boolean) {
+  return run(ctx, deleted ? "document.delete" : "document.restore", "document", async (tx) => {
+    const [d] = await tx.update(t.documents).set({ deletedAt: deleted ? sql`now()` : null, updatedBy: ctx.userId })
+      .where(and(eq(t.documents.id, id), eq(t.documents.workspaceId, ctx.workspace.id), deleted ? isNull(t.documents.deletedAt) : isNotNull(t.documents.deletedAt)))
+      .returning();
+    if (!d) throw new DomainError("NOT_FOUND", "Document not found.");
+    return { entityId: id, result: d };
+  });
+}
+
+/** Opening a sensitive document is audited (DOC-004). */
+export async function openDocument(ctx: Ctx, id: string) {
+  const db = await getDb();
+  const [d] = await db.select().from(t.documents).where(and(eq(t.documents.id, id), eq(t.documents.workspaceId, ctx.workspace.id), isNull(t.documents.deletedAt)));
+  if (d?.sensitive) await run(ctx, "document.view", "document", async () => ({ entityId: id, result: null }));
+  return d;
+}
+
+// ponytail: purge runs on the next upload instead of a scheduled job; move to a cron when there is a hosted server.
+async function purgeDeletedDocuments(ctx: Ctx) {
+  const db = await getDb();
+  const old = await db.delete(t.documents)
+    .where(and(eq(t.documents.workspaceId, ctx.workspace.id), lt(t.documents.deletedAt, sql`now() - make_interval(days => ${DOC_LIMITS.keepDeletedDays})`)))
+    .returning({ storagePath: t.documents.storagePath });
+  await Promise.all(old.map((d) => rm(docFile(d.storagePath), { force: true })));
 }

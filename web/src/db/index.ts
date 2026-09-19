@@ -11,14 +11,17 @@ import * as schema from "./schema";
 // Swapping to Supabase = replace this file with drizzle-orm/postgres-js; queries and migrations stay the same.
 export type DB = PgliteDatabase<typeof schema>;
 
+// RENT_DATA_DIR lets tests use their own database and never touch yours.
+const dataDir = () => process.env.RENT_DATA_DIR ?? path.join(process.cwd(), ".data", "pglite");
+/** Uploaded documents, next to the database so tests stay isolated too. */
+export const filesDir = () => `${dataDir()}-files`;
+
 const g = globalThis as unknown as { __db?: Promise<DB> };
 
 async function open(): Promise<DB> {
-  // RENT_DATA_DIR lets tests use their own database and never touch yours.
-  const dataDir = process.env.RENT_DATA_DIR ?? path.join(process.cwd(), ".data", "pglite");
-  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(dataDir(), { recursive: true });
   const client = await PGlite.create({
-    dataDir,
+    dataDir: dataDir(),
     extensions: { btree_gist },
   });
   const db = drizzle({ client, schema });
