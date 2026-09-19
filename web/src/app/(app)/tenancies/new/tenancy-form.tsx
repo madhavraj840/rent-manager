@@ -54,20 +54,20 @@ export function TenancyForm({ units, tenants, today, roundWhole, initialUnit }: 
     <form onSubmit={onSubmit} className="space-y-6">
       <FormError state={state} fields={["unitId", "fullName", "phone", "email", "startDate", "rent", "deposit", "graceDays", "billingStart", "depositHeld", "openingAmount", "leaseEnd"]} />
 
-      <Section title="Unit & people">
-        <Field label="Unit" name="unitId" state={state}>
+      <Section title="Room and people">
+        <Field label="Room" name="unitId" state={state}>
           <Select name="unitId" state={state} value={unitId} onChange={(e) => pickUnit(e.target.value)}>
             {[...new Set(units.map((u) => u.property))].map((prop) => (
               <optgroup key={prop} label={prop}>
                 {units.filter((u) => u.property === prop).map((u) => (
-                  <option key={u.id} value={u.id}>{u.label}{u.occupied ? " (occupied)" : ""}</option>
+                  <option key={u.id} value={u.id}>{u.label}{u.occupied ? " (has a tenant)" : ""}</option>
                 ))}
               </optgroup>
             ))}
           </Select>
         </Field>
         {unit.occupied && !existing && (
-          <p className="rounded-md bg-due-soft px-3 py-2 text-sm text-due">This unit has a current tenancy. A new one can only start after that tenant moves out.</p>
+          <p className="rounded-md bg-due-soft px-3 py-2 text-sm text-due">This room already has a tenant. A new tenant can only start after they move out.</p>
         )}
 
         <label className="flex items-start gap-3 rounded-md border border-line p-3">
@@ -96,7 +96,7 @@ export function TenancyForm({ units, tenants, today, roundWhole, initialUnit }: 
             </div>
           )}
         </fieldset>
-        <Field label="Other tenants (optional)" name="coTenants" hint="One name per line. They share this tenancy and its balance.">
+        <Field label="Other tenants (optional)" name="coTenants" hint="One name per line. They share this room, its rent and what is owed.">
           <textarea id="coTenants" name="coTenants" rows={2} className="w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-[15px]" />
         </Field>
       </Section>
@@ -121,7 +121,7 @@ export function TenancyForm({ units, tenants, today, roundWhole, initialUnit }: 
             <Input name="graceDays" state={state} type="number" min={0} max={60} value={grace} onChange={(e) => setGrace(e.target.value)} />
           </Field>
         </div>
-        <Field label="Lease ends (optional)" name="leaseEnd" state={state}>
+        <Field label="Rent agreement ends (optional)" name="leaseEnd" state={state}>
           <Input type="date" name="leaseEnd" state={state} min={startDate} />
         </Field>
       </Section>
@@ -141,7 +141,7 @@ export function TenancyForm({ units, tenants, today, roundWhole, initialUnit }: 
 
       {existing && (
         <Section title="Starting point in this app">
-          <Field label="Start billing from" name="billingStart" state={state} hint="Rent before this date is covered by the opening balance below.">
+          <Field label="Charge rent in this app from" name="billingStart" state={state} hint="For rent before this date, enter below what they owed or had paid ahead.">
             <Select name="billingStart" state={state} value={billing} onChange={(e) => setBillingStart(e.target.value)}>
               {billingOptions.map((d) => <option key={d} value={d}>{pretty(d)}</option>)}
             </Select>
@@ -174,12 +174,12 @@ export function TenancyForm({ units, tenants, today, roundWhole, initialUnit }: 
               </li>
             ))}
           </ul>
-          <p className="text-[13px] text-fg-2">Later months are added automatically on each period start.</p>
+          <p className="text-[13px] text-fg-2">Rent for later months is added automatically on each rent day.</p>
         </Section>
       )}
 
       <div className="flex justify-end">
-        <Submit pending={pending}>{existing ? "Add tenancy" : "Start tenancy"}</Submit>
+        <Submit pending={pending}>{existing ? "Add tenant" : "Add tenant and start rent"}</Submit>
       </div>
     </form>
   );

@@ -31,7 +31,7 @@ export default async function ReceiptPage({ params }: PageProps<"/print/receipt/
     <article className="relative">
       {void_ && (
         <p className="mb-6 rounded-md border-2 border-overdue px-4 py-2 text-center font-semibold text-overdue">
-          VOID · {r.voidReason}. This receipt is no longer valid.
+          CANCELLED · {r.voidReason}. This receipt is no longer valid.
         </p>
       )}
       <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line pb-5">

@@ -210,7 +210,7 @@ Affected documents: 15
 Decision ID:        D-012
 Date:               2026-09-18
 Decision:           Currency scope
-Status:             PROVISIONAL (multi-currency CONFIRMED by TO DO LIST Q12)
+Status:             CONFIRMED by the owner 2026-09-20
 Options considered: one currency per workspace; per property; per tenancy
 Selected approach:  Per property (ISO 4217), locked once a tenancy exists; tenancies inherit;
                     integer minor units; no FX conversion
@@ -235,7 +235,7 @@ Affected documents: 00, 04, 05, 09
 Decision ID:        D-014
 Date:               2026-09-18
 Decision:           Unit and co-tenant model
-Status:             PROVISIONAL (multiple tenants per unit CONFIRMED by Q4)
+Status:             CONFIRMED by the owner 2026-09-20
 Options considered: several concurrent tenancies per unit (capacity); one tenancy per unit with co-tenants
 Selected approach:  A unit is what is rented for one rent; at most one tenancy occupies it at a time;
                     co-tenants/family share that tenancy; PG beds or separately billed rooms are units
@@ -286,7 +286,7 @@ Affected documents: 01, 07, 08, 11, 14
 Decision ID:        D-021
 Date:               2026-09-18
 Decision:           Financial model
-Status:             PROVISIONAL (needs owner confirmation)
+Status:             CONFIRMED by the owner 2026-09-20
 Options considered: paid/unpaid flags per month; payments explicitly allocated to charges;
                     append-only ledger with derived FIFO allocation
 Selected approach:  Per-tenancy append-only ledger with RENT and DEPOSIT accounts; payments and
@@ -304,7 +304,7 @@ Affected documents: 04, 05, 07, 10, 13, 14
 Decision ID:        D-022
 Date:               2026-09-18
 Decision:           Rent periods, due dates and proration
-Status:             PROVISIONAL (needs owner confirmation)
+Status:             CONFIRMED by the owner 2026-09-20
 Options considered: calendar months only; move-in anniversary only; configurable cycle day;
                     30-day-month proration basis vs actual days
 Selected approach:  Monthly periods starting on a cycle day 1–28; due date = period start + grace
@@ -543,9 +543,9 @@ Affected documents: 10, 12
 Decision ID:        D-030
 Date:               2026-09-18
 Decision:           Hosting region
-Status:             REQUIRES DECISION (milestone M0)
+Status:             CONFIRMED by the owner 2026-09-20: Mumbai
 Options considered: Mumbai (ap-south-1); Singapore; Frankfurt; US East
-Selected approach:  (recommended) the region closest to the first 100 customers
+Selected approach:  Mumbai: Supabase ap-south-1, Vercel functions bom1
 Reason:             Latency and data-protection transfer rules
 Consequences:       Vercel function region must match; privacy policy states the location
 Affected documents: 06, 11

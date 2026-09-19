@@ -63,7 +63,7 @@ export function DialogForm({ trigger, triggerClass, title, subtitle, action, sub
           </div>
           <footer className="flex justify-end gap-2 border-t border-line px-5 py-3">
             <button type="button" onClick={() => ref.current?.close()} className="h-10 rounded-md px-4 text-sm font-medium text-fg-2 hover:bg-surface-2">
-              Cancel
+              Close
             </button>
             <Submit pending={pending}>{submitLabel}</Submit>
           </footer>

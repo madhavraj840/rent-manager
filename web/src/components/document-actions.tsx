@@ -54,7 +54,7 @@ function DocFields({ d, state }: { d: DocTarget; state: Parameters<typeof Field>
         <Input name="title" state={state} maxLength={120} placeholder="e.g. Agreement 2026–27" />
       </Field>
       <Outcome>
-        {toPerson ? <>It is filed under {d.person!.name}, so it also shows on their future tenancies.</> : <>It is saved to {d.where}.</>}
+        {toPerson ? <>It is filed under {d.person!.name}, so it stays with them if they later rent another room from you.</> : <>It is saved to {d.where}.</>}
         {" "}It shows under Documents on this page; click it to open.
         {sensitive && " It is marked sensitive: only owners and managers will be able to open it, and every opening is logged."}
       </Outcome>

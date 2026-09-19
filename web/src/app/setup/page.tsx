@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getCtx } from "@/server/queries";
 import { SetupForm } from "./setup-form";
 
-export const metadata: Metadata = { title: "Create workspace" };
+export const metadata: Metadata = { title: "Get started" };
 
 // SCR-03 Create workspace (first run)
 export default async function SetupPage() {
@@ -15,8 +15,8 @@ export default async function SetupPage() {
           <span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-md bg-primary font-bold text-on-primary">R</span>
           <span className="font-semibold">Rent Manager</span>
         </div>
-        <h1 className="text-xl font-semibold tracking-tight">Set up your workspace</h1>
-        <p className="mt-1 text-sm text-fg-2">A workspace holds your properties, tenants and money records. You can invite co-owners and managers later.</p>
+        <h1 className="text-xl font-semibold tracking-tight">Set up your account</h1>
+        <p className="mt-1 text-sm text-fg-2">Your account holds your properties, tenants and money records. Later you can invite co-owners and managers.</p>
         <SetupForm />
       </div>
     </main>

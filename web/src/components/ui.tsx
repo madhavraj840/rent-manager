@@ -84,7 +84,7 @@ export function Chip({ tone, children, label }: { tone: keyof typeof chipTone; c
 export function TenancyStatus({ v }: { v: TenancyView }) {
   const b = v.balance;
   const cur = v.tenancy.currency;
-  if (v.tenancy.status === "CLOSED") return <Chip tone="neutral">CLOSED</Chip>;
+  if (v.tenancy.status === "CLOSED") return <Chip tone="neutral">MOVED OUT</Chip>;
   if (b.overdue > 0) {
     const days = `${b.daysOverdue} ${b.daysOverdue === 1 ? "day" : "days"}`;
     return <Chip tone="overdue" label={`Status: overdue, ${days}`}>OVERDUE · {days}</Chip>;

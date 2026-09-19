@@ -58,7 +58,7 @@ function money(value: string | undefined, currency: string, field: string, { req
 async function tenancyCurrency(id: string) {
   const db = await getDb();
   const [tn] = await db.select({ currency: t.tenancies.currency }).from(t.tenancies).where(eq(t.tenancies.id, id));
-  if (!tn) throw new FieldError("", "Tenancy not found");
+  if (!tn) throw new FieldError("", "Tenant record not found");
   return tn.currency;
 }
 
@@ -119,7 +119,7 @@ export async function createUnits(_: FormState, fd: FormData): Promise<FormState
     const db = await getDb();
     const [p] = await db.select().from(t.properties).where(eq(t.properties.id, f.propertyId));
     if (!p) throw new FieldError("", "Property not found");
-    const type = z.enum(UNIT_TYPES, "Choose a unit type").parse(f.type);
+    const type = z.enum(UNIT_TYPES, "Choose a room type").parse(f.type);
     const base = {
       type,
       floorLabel: f.floorLabel?.trim() || undefined,
@@ -129,7 +129,7 @@ export async function createUnits(_: FormState, fd: FormData): Promise<FormState
     let labels: string[];
     if (f.mode === "many") {
       const n = z.object({
-        count: z.coerce.number().int().min(1, "At least 1 unit").max(500, "At most 500 at once"),
+        count: z.coerce.number().int().min(1, "Add at least 1 room").max(500, "At most 500 at once"),
         start: z.coerce.number().int().min(0).max(100000),
         step: z.coerce.number().int().min(1).max(100),
         pad: z.coerce.number().int().min(0).max(6),
@@ -137,10 +137,10 @@ export async function createUnits(_: FormState, fd: FormData): Promise<FormState
       }).parse(f);
       labels = unitLabels(n.pattern, n.count, n.start, n.step, n.pad);
     } else {
-      labels = [z.string().trim().min(1, "Enter a unit name").max(40).parse(f.label)];
+      labels = [z.string().trim().min(1, "Enter a room name").max(40).parse(f.label)];
     }
     if (new Set(labels.map((l) => l.toLowerCase())).size !== labels.length) throw new FieldError("pattern", "The pattern creates the same name twice");
-    if (labels.some((l) => l.length > 40)) throw new FieldError("pattern", "Unit names can be at most 40 characters");
+    if (labels.some((l) => l.length > 40)) throw new FieldError("pattern", "Room names can be at most 40 characters");
     try {
       await cmd.addUnits(ctx, p.id, labels.map((label) => ({ ...base, label })));
     } catch (e) {
@@ -163,7 +163,7 @@ export async function startTenancyAction(_: FormState, fd: FormData): Promise<Fo
     const f = form(fd);
     const db = await getDb();
     const [unit] = await db.select().from(t.units).where(eq(t.units.id, f.unitId ?? ""));
-    if (!unit) throw new FieldError("unitId", "Choose a unit");
+    if (!unit) throw new FieldError("unitId", "Choose a room");
     const [p] = await db.select().from(t.properties).where(eq(t.properties.id, unit.propertyId));
     const cur = p.currency;
     const existing = f.existing === "on";
@@ -269,7 +269,7 @@ export async function voidEntryAction(_: FormState, fd: FormData): Promise<FormS
     const f = form(fd);
     await cmd.voidEntry(ctx, { entryId: f.entryId, reason: str(200).min(1, "Enter a reason").parse(f.reason) });
     revalidatePath("/", "layout");
-    return { ok: "Entry voided", at: Date.now() };
+    return { ok: "Entry cancelled · it stays crossed out under Payments and charges", at: Date.now() };
   });
 }
 
@@ -365,7 +365,7 @@ export async function giveNoticeAction(_: FormState, fd: FormData): Promise<Form
       givenBy: z.enum(["TENANT", "LANDLORD"]).parse(f.givenBy),
     });
     revalidatePath("/", "layout");
-    return { ok: "Notice recorded", at: Date.now() };
+    return { ok: "Leaving date saved · shown at the top of this page. Rent stops after that date", at: Date.now() };
   });
 }
 
@@ -374,7 +374,7 @@ export async function withdrawNoticeAction(_: FormState, fd: FormData): Promise<
     const ctx = await requireCtx();
     await cmd.withdrawNotice(ctx, String(fd.get("tenancyId")));
     revalidatePath("/", "layout");
-    return { ok: "Notice withdrawn", at: Date.now() };
+    return { ok: "Tenant is staying · monthly rent continues", at: Date.now() };
   });
 }
 
@@ -419,7 +419,7 @@ export async function saveExpenseAction(_: FormState, fd: FormData): Promise<For
       }
     }
     revalidatePath("/", "layout");
-    return { ok: (f.id ? "Expense updated" : "Expense added") + note, at: Date.now() };
+    return { ok: `${f.id ? "Expense updated" : "Expense added"} · shown under Expenses${note}`, at: Date.now() };
   });
 }
 
@@ -429,7 +429,7 @@ export async function voidExpenseAction(_: FormState, fd: FormData): Promise<For
     const f = form(fd);
     await cmd.voidExpense(ctx, f.id, str(200).min(1, "Enter a reason").parse(f.reason));
     revalidatePath("/", "layout");
-    return { ok: "Expense voided", at: Date.now() };
+    return { ok: "Expense cancelled · it stays crossed out under Expenses", at: Date.now() };
   });
 }
 
@@ -461,7 +461,7 @@ export async function saveMeterAction(_: FormState, fd: FormData): Promise<FormS
       type: z.enum(METER_TYPES, "Choose a type").parse(f.type),
       label: str(40).min(1, "Enter a name").parse(f.label),
       serialNumber: opt(60).parse(f.serialNumber),
-      uom: z.enum(UOMS, "Choose a unit of measure").parse(f.uom),
+      uom: z.enum(UOMS, "Choose what it is measured in").parse(f.uom),
       rateE4,
       fixedChargeMinor: money(f.fixed, p.currency, "fixed"),
     };
@@ -506,7 +506,7 @@ export async function voidReadingAction(_: FormState, fd: FormData): Promise<For
     const f = form(fd);
     await cmd.voidReading(ctx, f.id, str(200).min(1, "Enter a reason").parse(f.reason));
     revalidatePath("/", "layout");
-    return { ok: "Reading voided", at: Date.now() };
+    return { ok: "Reading cancelled · it stays crossed out in the meter history", at: Date.now() };
   });
 }
 

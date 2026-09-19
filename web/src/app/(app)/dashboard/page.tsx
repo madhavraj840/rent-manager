@@ -4,7 +4,7 @@ import { Check } from "lucide-react";
 import { addDays } from "@/lib/money";
 import { loadSample } from "@/app/actions";
 import { expensesIn, loadPortfolio, monthSummary } from "@/server/queries";
-import { Card, Empty, PageHeader, TenancyRow, buttonClass, longDate, money, shortDate } from "@/components/ui";
+import { Card, PageHeader, TenancyRow, buttonClass, linkClass, longDate, money, shortDate } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -32,8 +32,8 @@ export default async function DashboardPage() {
     <>
       <PageHeader
         title="Dashboard"
-        sub={`${month} · ${current.length} of ${units.length} units occupied`}
-        actions={<Link href="/tenancies/new" className={buttonClass.secondary}>New tenancy</Link>}
+        sub={`${month} · ${current.length} of ${units.length} rooms have a tenant`}
+        actions={<Link href="/tenancies/new" className={buttonClass.secondary}>Add tenant</Link>}
       />
 
       {/* Amounts in different currencies are never added together (10 §17). */}
@@ -51,17 +51,17 @@ export default async function DashboardPage() {
               </div>
               <p className="num mt-1.5 text-[13px] text-fg-2">{pct}% of {money(s.billed, cur)} due this month</p>
             </Stat>
-            <Stat label="Outstanding" value={money(s.outstanding, cur)}>
-              <p className="mt-1.5 text-[13px] text-fg-2">All unpaid charges, any month</p>
+            <Stat label="Unpaid" value={money(s.outstanding, cur)}>
+              <p className="mt-1.5 text-[13px] text-fg-2">Everything not paid yet, including rent not due yet</p>
             </Stat>
             <Stat label="Overdue" value={money(s.overdue, cur)} tone={s.overdue > 0 ? "text-overdue" : undefined}>
-              <p className="mt-1.5 text-[13px] text-fg-2">{overdueCount} {overdueCount === 1 ? "tenancy" : "tenancies"} past due date</p>
+              <p className="mt-1.5 text-[13px] text-fg-2">Past the pay-by date · {overdueCount} {overdueCount === 1 ? "tenant" : "tenants"}</p>
             </Stat>
             <Stat label="Deposits held" value={money(s.depositsHeld, cur)}>
-              <p className="mt-1.5 text-[13px] text-fg-2">Refundable at move-out</p>
+              <p className="mt-1.5 text-[13px] text-fg-2">Tenants&apos; money, returned at move-out. Not income.</p>
             </Stat>
-            <Stat label="Net this month" value={money(s.collected - spent, cur)} tone={s.collected - spent < 0 ? "text-overdue" : undefined}>
-              <p className="num mt-1.5 text-[13px] text-fg-2"><Link href="/expenses" className="hover:underline">{money(spent, cur)} spent</Link></p>
+            <Stat label="Left after expenses" value={money(s.collected - spent, cur)} tone={s.collected - spent < 0 ? "text-overdue" : undefined}>
+              <p className="num mt-1.5 text-[13px] text-fg-2">Collected {money(s.collected, cur)} − <Link href="/expenses" className={linkClass}>spent {money(spent, cur)}</Link></p>
             </Stat>
           </div>
         );
@@ -69,11 +69,11 @@ export default async function DashboardPage() {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="min-w-0 space-y-6">
-          <Card title={`Needs attention (${attention.length})`}>
+          <Card title={`Late rent (${attention.length})`}>
             {attention.length ? (
               <ul className="divide-y divide-line">{attention.map((v) => <TenancyRow key={v.tenancy.id} v={v} ctx={ctx} />)}</ul>
             ) : (
-              <Empty>Nothing overdue.</Empty>
+              <p className="flex items-center gap-2 px-4 py-3 text-sm text-fg-2"><Check size={16} className="text-primary" aria-hidden /> Nothing is late. No action needed.</p>
             )}
           </Card>
 
@@ -81,7 +81,7 @@ export default async function DashboardPage() {
             {dueSoon.length ? (
               <ul className="divide-y divide-line">{dueSoon.map((v) => <TenancyRow key={v.tenancy.id} v={v} ctx={ctx} />)}</ul>
             ) : (
-              <Empty>No rent falls due in the next 7 days.</Empty>
+              <p className="flex items-center gap-2 px-4 py-3 text-sm text-fg-2"><Check size={16} className="text-primary" aria-hidden /> No rent is due in the next 7 days.</p>
             )}
           </Card>
 
@@ -108,7 +108,7 @@ export default async function DashboardPage() {
             {leases.filter((v) => !v.tenancy.plannedMoveOutDate).map((v) => (
               <li key={v.tenancy.id}>
                 <Link href={`/tenancies/${v.tenancy.id}`} className="block px-4 py-3 hover:bg-surface-2">
-                  <p className="font-medium">Lease {v.tenancy.leaseEndDate! < ctx.today ? "ended" : "ends"} {longDate(v.tenancy.leaseEndDate)}</p>
+                  <p className="font-medium">Rent agreement {v.tenancy.leaseEndDate! < ctx.today ? "ended" : "ends"} {longDate(v.tenancy.leaseEndDate)}</p>
                   <p className="text-[13px] text-fg-2">{v.unit.label} · {v.people[0]?.fullName}</p>
                 </Link>
               </li>
@@ -121,7 +121,7 @@ export default async function DashboardPage() {
                 </Link>
               </li>
             ))}
-            {!leases.length && !depositsShort.length && !leaving.length && <li className="px-4 py-6 text-fg-2">Nothing in the next 30 days.</li>}
+            {!leases.length && !depositsShort.length && !leaving.length && <li className="flex items-center gap-2 px-4 py-3 text-fg-2"><Check size={16} className="text-primary" aria-hidden /> Nothing in the next 30 days.</li>}
           </ul>
         </Card>
       </div>
@@ -133,8 +133,8 @@ export default async function DashboardPage() {
 function Onboarding({ hasProperty, hasUnits }: { hasProperty: boolean; hasUnits: boolean }) {
   const steps = [
     { done: hasProperty, title: "Add a property", text: "A building, house or PG you rent out.", href: "/properties/new", cta: "Add property" },
-    { done: hasUnits, title: "Add units", text: "Flats, rooms or beds, one at a time or many at once.", href: "/properties", cta: "Go to properties" },
-    { done: false, title: "Add a tenancy", text: "A new tenant moving in, or someone already living there.", href: "/tenancies/new", cta: "New tenancy" },
+    { done: hasUnits, title: "Add rooms", text: "Rooms, flats, shops or beds, one at a time or many at once.", href: "/properties", cta: "Go to properties" },
+    { done: false, title: "Add a tenant", text: "A new tenant moving in, or someone already living there.", href: "/tenancies/new", cta: "Add tenant" },
   ];
   const next = steps.findIndex((s) => !s.done);
   return (
@@ -161,7 +161,7 @@ function Onboarding({ hasProperty, hasUnits }: { hasProperty: boolean; hasUnits:
           <form action={loadSample} className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
             <div>
               <p className="font-medium">Just looking around?</p>
-              <p className="text-sm text-fg-2">Fill this workspace with 3 sample properties and 10 tenancies to try every screen.</p>
+              <p className="text-sm text-fg-2">Add 3 sample properties and 10 sample tenants, so you can try every screen.</p>
             </div>
             <button className={buttonClass.secondary}>Load sample data</button>
           </form>

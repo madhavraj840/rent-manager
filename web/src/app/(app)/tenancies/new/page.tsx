@@ -4,7 +4,7 @@ import { loadPortfolio } from "@/server/queries";
 import { Card, Crumbs, Empty, PageHeader, buttonClass } from "@/components/ui";
 import { TenancyForm } from "./tenancy-form";
 
-export const metadata: Metadata = { title: "New tenancy" };
+export const metadata: Metadata = { title: "Add tenant" };
 
 // SCR-40 New tenancy + SCR-41 Existing tenancy (one form)
 export default async function NewTenancyPage({ searchParams }: PageProps<"/tenancies/new">) {
@@ -22,11 +22,11 @@ export default async function NewTenancyPage({ searchParams }: PageProps<"/tenan
 
   return (
     <div className="mx-auto max-w-2xl">
-      <Crumbs items={[["Tenants", "/tenants"], ["New tenancy"]]} />
-      <PageHeader title="New tenancy" sub="Who is renting which unit, for how much, from when." />
+      <Crumbs items={[["Tenants", "/tenants"], ["Add tenant"]]} />
+      <PageHeader title="Add tenant" sub="Who is renting which room, for how much, and from when." />
       {!options.length ? (
         <Card>
-          <Empty action={<Link href="/properties" className={buttonClass.primary}>Go to properties</Link>}>Add a property and its units first.</Empty>
+          <Empty action={<Link href="/properties" className={buttonClass.primary}>Go to properties</Link>}>Add a property and its rooms first.</Empty>
         </Card>
       ) : (
         <TenancyForm

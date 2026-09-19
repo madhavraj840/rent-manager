@@ -11,6 +11,9 @@ import { CREDIT_CATEGORIES, PERSON_DOCS } from "@/lib/labels";
 
 // Every write goes through run(): one transaction, workspace change sequence, version stamping, audit (06 §6).
 
+/** "1 Sep 2026" for messages people read (C-11). */
+const niceDate = (d: string) => new Date(d + "T00:00:00Z").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+
 export class DomainError extends Error {
   constructor(public code: string, message: string, public field?: string) {
     super(message);
@@ -61,7 +64,7 @@ async function run<T>(
   } catch (e) {
     if (e instanceof DomainError) throw e;
     const code = pgCode(e);
-    if (code === "23P01") throw new DomainError("TENANCY_OVERLAP", "This unit already has a tenancy for these dates. Change the unit or the dates.", "startDate");
+    if (code === "23P01") throw new DomainError("TENANCY_OVERLAP", "This room already has a tenant for these dates. Choose another room or change the dates.", "startDate");
     if (code === "23505") throw new DomainError("DUPLICATE", "That name is already used. Choose a different one.");
     if (code === "23514") throw new DomainError("VALIDATION", "Some values are outside the allowed range.");
     throw e;
@@ -108,7 +111,7 @@ export function updateProperty(ctx: Ctx, id: string, input: PropertyInput) {
     if (!before) throw new DomainError("NOT_FOUND", "Property not found.");
     if (before.currency !== input.currency) {
       const [used] = await tx.select({ id: t.tenancies.id }).from(t.tenancies).where(eq(t.tenancies.propertyId, id)).limit(1);
-      if (used) throw new DomainError("CURRENCY_LOCKED", "Currency can't change after a tenancy exists.", "currency");
+      if (used) throw new DomainError("CURRENCY_LOCKED", "The currency can't change once a tenant has been added.", "currency");
     }
     await tx.update(t.properties).set({ ...input, updatedBy: ctx.userId }).where(eq(t.properties.id, id));
     return { entityId: id, changes: { before, after: input }, result: id };
@@ -147,7 +150,7 @@ async function balanceOf(tx: Tx, tenancyId: string, today: string) {
 
 async function loadTenancy(tx: Tx, ctx: Ctx, id: string) {
   const [tn] = await tx.select().from(t.tenancies).where(and(eq(t.tenancies.id, id), eq(t.tenancies.workspaceId, ctx.workspace.id)));
-  if (!tn) throw new DomainError("NOT_FOUND", "Tenancy not found.");
+  if (!tn) throw new DomainError("NOT_FOUND", "Tenant record not found.");
   return tn;
 }
 
@@ -161,7 +164,7 @@ async function closeIfSettled(tx: Tx, ctx: Ctx, tn: typeof t.tenancies.$inferSel
 
 const assertOpen = (tn: typeof t.tenancies.$inferSelect) => {
   if (tn.status === "CLOSED" || tn.status === "CANCELLED")
-    throw new DomainError("TENANCY_CLOSED", "This tenancy is closed. No new entries can be added.");
+    throw new DomainError("TENANCY_CLOSED", "This tenant has moved out. New entries can't be added.");
 };
 
 async function nextReceipt(tx: Tx, ctx: Ctx) {
@@ -258,17 +261,17 @@ export interface StartTenancyInput {
 export function startTenancy(ctx: Ctx, input: StartTenancyInput) {
   return run(ctx, input.existing ? "tenancy.add_existing" : "tenancy.start", "tenancy", async (tx) => {
     const [unit] = await tx.select().from(t.units).where(and(eq(t.units.id, input.unitId), eq(t.units.workspaceId, ctx.workspace.id)));
-    if (!unit) throw new DomainError("NOT_FOUND", "Choose a unit.", "unitId");
+    if (!unit) throw new DomainError("NOT_FOUND", "Choose a room.", "unitId");
     const [prop] = await tx.select().from(t.properties).where(eq(t.properties.id, unit.propertyId));
-    if (input.startDate > addDays(ctx.today, 365)) throw new DomainError("VALIDATION", "Move-in date is too far ahead.", "startDate");
+    if (input.startDate > addDays(ctx.today, 365)) throw new DomainError("VALIDATION", "The move-in date is too far in the future.", "startDate");
 
     const billingStart = input.existing ? input.billingStart! : input.startDate;
     if (input.existing) {
-      if (billingStart < input.startDate) throw new DomainError("VALIDATION", "Billing can't start before the tenant moved in.", "billingStart");
+      if (billingStart < input.startDate) throw new DomainError("VALIDATION", "Rent can't start before the tenant moved in.", "billingStart");
       if (periodStartFor(billingStart, input.cycleDay) !== billingStart)
-        throw new DomainError("PERIOD_NOT_ALIGNED", `Billing must start on a rent day (the ${input.cycleDay}${input.cycleDay === 1 ? "st" : "th"}).`, "billingStart");
+        throw new DomainError("PERIOD_NOT_ALIGNED", `Rent must start on a rent day (the ${input.cycleDay}${input.cycleDay === 1 ? "st" : "th"}).`, "billingStart");
       if (input.depositHeldMinor > input.depositMinor)
-        throw new DomainError("DEPOSIT_EXCEEDS_DUE", "Deposit already held can't be more than the deposit agreed.", "depositHeld");
+        throw new DomainError("DEPOSIT_EXCEEDS_DUE", "The deposit you already hold can't be more than the agreed deposit.", "depositHeld");
     }
 
     let tenantId = input.tenantId;
@@ -303,9 +306,9 @@ export function startTenancy(ctx: Ctx, input: StartTenancyInput) {
     if (input.existing && input.depositHeldMinor > 0)
       lines.push({ kind: "PAYMENT", account: "DEPOSIT", method: "OPENING_BALANCE", amountMinor: input.depositHeldMinor, entryDate: ob, description: "Deposit already held", source: "OPENING" });
     if (input.existing && input.openingOwedMinor > 0)
-      lines.push({ kind: "CHARGE", account: "RENT", category: "OPENING_BALANCE", amountMinor: input.openingOwedMinor, entryDate: ob, dueDate: ob, description: "Opening balance (owed before this app)", source: "OPENING" });
+      lines.push({ kind: "CHARGE", account: "RENT", category: "OPENING_BALANCE", amountMinor: input.openingOwedMinor, entryDate: ob, dueDate: ob, description: "Owed from before (before using this app)", source: "OPENING" });
     if (input.existing && input.openingAdvanceMinor > 0)
-      lines.push({ kind: "CREDIT", account: "RENT", category: "OPENING_ADVANCE", amountMinor: input.openingAdvanceMinor, entryDate: ob, description: "Opening advance (paid ahead before this app)", source: "OPENING" });
+      lines.push({ kind: "CREDIT", account: "RENT", category: "OPENING_ADVANCE", amountMinor: input.openingAdvanceMinor, entryDate: ob, description: "Paid ahead from before (before using this app)", source: "OPENING" });
     if (lines.length) await tx.insert(t.ledgerEntries).values(lines.map((l) => entry(ctx, tn, l)));
 
     await generateRent(tx, ctx, tn, ctx.today);
@@ -381,13 +384,13 @@ export function voidEntry(ctx: Ctx, input: { entryId: string; reason: string }) 
   return run(ctx, "ledger.void", "ledger_entry", async (tx) => {
     const [e] = await tx.select().from(t.ledgerEntries).where(and(eq(t.ledgerEntries.id, input.entryId), eq(t.ledgerEntries.workspaceId, ctx.workspace.id)));
     if (!e) throw new DomainError("NOT_FOUND", "Entry not found.");
-    if (e.status === "VOID") throw new DomainError("ALREADY_VOID", "This entry is already void.");
-    if (e.settlementId) throw new DomainError("ENTRY_IN_SETTLEMENT", "This entry is part of a move-out settlement and can't be voided.");
+    if (e.status === "VOID") throw new DomainError("ALREADY_VOID", "This entry is already cancelled.");
+    if (e.settlementId) throw new DomainError("ENTRY_IN_SETTLEMENT", "This entry is part of a move-out final bill and can't be cancelled.");
     const tn = await loadTenancy(tx, ctx, e.tenancyId);
     assertOpen(tn);
     if (e.account === "DEPOSIT" && e.kind === "PAYMENT") {
       const bal = await balanceOf(tx, tn.id, ctx.today);
-      if (bal.depositHeld - e.amountMinor < 0) throw new DomainError("DEPOSIT_INSUFFICIENT", "Voiding this would make the deposit held negative.");
+      if (bal.depositHeld - e.amountMinor < 0) throw new DomainError("DEPOSIT_INSUFFICIENT", "Cancelling this would make the deposit you hold less than zero.");
     }
     await tx.update(t.ledgerEntries).set({ status: "VOID", voidReason: input.reason, voidedAt: sql`now()`, voidedBy: ctx.userId, updatedBy: ctx.userId })
       .where(eq(t.ledgerEntries.id, e.id));
@@ -403,7 +406,7 @@ export interface Deduction { category: "DAMAGE" | "CLEANING" | "OTHER"; amountMi
 export async function settlementPreview(ctx: Ctx, tenancyId: string, moveOut: string, deductions: Deduction[] = []) {
   const db = await getDb();
   const [tn] = await db.select().from(t.tenancies).where(and(eq(t.tenancies.id, tenancyId), eq(t.tenancies.workspaceId, ctx.workspace.id)));
-  if (!tn) throw new DomainError("NOT_FOUND", "Tenancy not found.");
+  if (!tn) throw new DomainError("NOT_FOUND", "Tenant record not found.");
   const rows = (await db.select().from(t.ledgerEntries).where(eq(t.ledgerEntries.tenancyId, tn.id))).filter((r) => r.status === "ACTIVE");
   const unit = roundingUnit(tn.currency, ctx.workspace.roundToWholeUnits);
   const rent = rows.filter((r) => r.kind === "CHARGE" && r.category === "RENT" && r.source === "AUTO" && r.periodStart);
@@ -433,8 +436,8 @@ export async function finalizeMoveOut(ctx: Ctx, input: {
   if (input.moveOut > ctx.today) throw new DomainError("VALIDATION", "Move-out date can't be in the future. Record it on the day the tenant leaves.", "moveOut");
   const p = await settlementPreview(ctx, input.tenancyId, input.moveOut, input.deductions);
   const tn = p.tenancy;
-  if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This tenancy has already ended.");
-  if (input.moveOut < tn.startDate) throw new DomainError("VALIDATION", "Move-out can't be before move-in.", "moveOut");
+  if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This tenant has already moved out.");
+  if (input.moveOut < tn.startDate) throw new DomainError("VALIDATION", `The move-out date can't be before they moved in (${niceDate(tn.startDate)}).`, "moveOut");
 
   return run(ctx, "settlement.finalize", "tenancy", async (tx) => {
     const [s] = await tx.insert(t.settlements).values({
@@ -494,8 +497,8 @@ export function updateTenant(ctx: Ctx, id: string, input: TenantInput) {
 export function updateTerms(ctx: Ctx, input: { tenancyId: string; leaseEndDate?: string; graceDays: number; notes?: string }) {
   return run(ctx, "tenancy.update_terms", "tenancy", async (tx) => {
     const tn = await loadTenancy(tx, ctx, input.tenancyId);
-    if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This tenancy has ended.");
-    if (input.leaseEndDate && input.leaseEndDate <= tn.startDate) throw new DomainError("VALIDATION", "Lease end must be after the move-in date.", "leaseEnd");
+    if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This tenant has already moved out.");
+    if (input.leaseEndDate && input.leaseEndDate <= tn.startDate) throw new DomainError("VALIDATION", `The lease end must be after the move-in date (${niceDate(tn.startDate)}).`, "leaseEnd");
     const after = { leaseEndDate: input.leaseEndDate ?? null, graceDays: input.graceDays, notes: input.notes ?? null };
     await tx.update(t.tenancies).set({ ...after, updatedBy: ctx.userId }).where(eq(t.tenancies.id, tn.id));
     return { entityId: tn.id, changes: { before: { leaseEndDate: tn.leaseEndDate, graceDays: tn.graceDays, notes: tn.notes }, after }, result: tn.id };
@@ -506,9 +509,9 @@ export function updateTerms(ctx: Ctx, input: { tenancyId: string; leaseEndDate?:
 export function giveNotice(ctx: Ctx, input: { tenancyId: string; noticeDate: string; plannedMoveOut: string; givenBy: "TENANT" | "LANDLORD" }) {
   return run(ctx, "tenancy.notice", "tenancy", async (tx) => {
     const tn = await loadTenancy(tx, ctx, input.tenancyId);
-    if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This tenancy has ended.");
-    if (input.plannedMoveOut < input.noticeDate) throw new DomainError("VALIDATION", "Move-out can't be before the notice date.", "plannedMoveOut");
-    if (input.plannedMoveOut < tn.startDate) throw new DomainError("VALIDATION", "Move-out can't be before move-in.", "plannedMoveOut");
+    if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This tenant has already moved out.");
+    if (input.plannedMoveOut < input.noticeDate) throw new DomainError("VALIDATION", "The leaving date can't be before the day they told you. Choose a later date.", "plannedMoveOut");
+    if (input.plannedMoveOut < tn.startDate) throw new DomainError("VALIDATION", `The leaving date can't be before they moved in (${niceDate(tn.startDate)}). Choose a later date.`, "plannedMoveOut");
     await tx.update(t.tenancies).set({
       noticeGivenOn: input.noticeDate, noticeGivenBy: input.givenBy, plannedMoveOutDate: input.plannedMoveOut, updatedBy: ctx.userId,
     }).where(eq(t.tenancies.id, tn.id));
@@ -519,7 +522,7 @@ export function giveNotice(ctx: Ctx, input: { tenancyId: string; noticeDate: str
 export function withdrawNotice(ctx: Ctx, tenancyId: string) {
   return run(ctx, "tenancy.notice_withdraw", "tenancy", async (tx) => {
     const tn = await loadTenancy(tx, ctx, tenancyId);
-    if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This tenancy has ended.");
+    if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This tenant has already moved out.");
     await tx.update(t.tenancies).set({ noticeGivenOn: null, noticeGivenBy: null, plannedMoveOutDate: null, updatedBy: ctx.userId }).where(eq(t.tenancies.id, tn.id));
     await generateRent(tx, ctx, { ...tn, plannedMoveOutDate: null }, ctx.today);
     return { entityId: tn.id, changes: { withdrawn: tn.plannedMoveOutDate }, result: tn.id };
@@ -533,9 +536,9 @@ export function withdrawNotice(ctx: Ctx, tenancyId: string) {
 export function changeRent(ctx: Ctx, input: { tenancyId: string; effectiveFrom: string; rentMinor: number; reason?: string }) {
   return run(ctx, "rent.revise", "tenancy", async (tx) => {
     const tn = await loadTenancy(tx, ctx, input.tenancyId);
-    if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This tenancy has ended.");
+    if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This tenant has already moved out.");
     const d = input.effectiveFrom;
-    if (d <= tn.billingStartDate) throw new DomainError("VALIDATION", "Choose a date after billing started. To fix the first rent, void the charges instead.", "effectiveFrom");
+    if (d <= tn.billingStartDate) throw new DomainError("VALIDATION", "Choose a date after rent started. To fix the first rent, cancel those charges instead.", "effectiveFrom");
     if (periodStartFor(d, tn.cycleDay) !== d)
       throw new DomainError("PERIOD_NOT_ALIGNED", `The new rent must start on a rent day (the ${tn.cycleDay}${tn.cycleDay === 1 ? "st" : "th"} of a month).`, "effectiveFrom");
     const revisions = await tx.select().from(t.rentRevisions).where(and(eq(t.rentRevisions.tenancyId, tn.id), isNull(t.rentRevisions.deletedAt)));
@@ -578,14 +581,14 @@ export interface ExpenseInput {
 async function expenseScope(tx: Tx, ctx: Ctx, input: ExpenseInput) {
   if (input.expenseDate > addDays(ctx.today, 1)) throw new DomainError("VALIDATION", "The date can't be in the future.", "expenseDate");
   if (!input.propertyId) {
-    if (input.unitId) throw new DomainError("VALIDATION", "Choose the property for this unit.", "propertyId");
+    if (input.unitId) throw new DomainError("VALIDATION", "Choose the property for this room.", "propertyId");
     return ctx.workspace.defaultCurrency;
   }
   const [p] = await tx.select().from(t.properties).where(and(eq(t.properties.id, input.propertyId), eq(t.properties.workspaceId, ctx.workspace.id)));
   if (!p) throw new DomainError("NOT_FOUND", "Property not found.", "propertyId");
   if (input.unitId) {
     const [u] = await tx.select({ id: t.units.id }).from(t.units).where(and(eq(t.units.id, input.unitId), eq(t.units.propertyId, p.id)));
-    if (!u) throw new DomainError("VALIDATION", "That unit is not in this property.", "unitId");
+    if (!u) throw new DomainError("VALIDATION", "That room is not in this property.", "unitId");
   }
   return p.currency;
 }
@@ -607,7 +610,7 @@ export function updateExpense(ctx: Ctx, id: string, input: ExpenseInput) {
   return run(ctx, "expense.update", "expense", async (tx) => {
     const [before] = await tx.select().from(t.expenses).where(and(eq(t.expenses.id, id), eq(t.expenses.workspaceId, ctx.workspace.id)));
     if (!before) throw new DomainError("NOT_FOUND", "Expense not found.");
-    if (before.status === "VOID") throw new DomainError("ALREADY_VOID", "A voided expense can't be edited.");
+    if (before.status === "VOID") throw new DomainError("ALREADY_VOID", "A cancelled expense can't be edited.");
     const currency = await expenseScope(tx, ctx, input);
     await tx.update(t.expenses).set({ ...expenseRow(input), currency, updatedBy: ctx.userId }).where(eq(t.expenses.id, id));
     return { entityId: id, changes: { before, after: input }, result: id };
@@ -618,7 +621,7 @@ export function voidExpense(ctx: Ctx, id: string, reason: string) {
   return run(ctx, "expense.void", "expense", async (tx) => {
     const [e] = await tx.select().from(t.expenses).where(and(eq(t.expenses.id, id), eq(t.expenses.workspaceId, ctx.workspace.id)));
     if (!e) throw new DomainError("NOT_FOUND", "Expense not found.");
-    if (e.status === "VOID") throw new DomainError("ALREADY_VOID", "This expense is already void.");
+    if (e.status === "VOID") throw new DomainError("ALREADY_VOID", "This expense is already cancelled.");
     await tx.update(t.expenses).set({ status: "VOID", voidReason: reason, updatedBy: ctx.userId }).where(eq(t.expenses.id, id));
     return { entityId: id, changes: { reason, amount: e.amountMinor }, result: id };
   });
@@ -636,7 +639,7 @@ async function meterScope(tx: Tx, ctx: Ctx, input: MeterInput, exceptId?: string
   if (!p) throw new DomainError("NOT_FOUND", "Property not found.");
   if (input.unitId) {
     const [u] = await tx.select({ id: t.units.id }).from(t.units).where(and(eq(t.units.id, input.unitId), eq(t.units.propertyId, p.id)));
-    if (!u) throw new DomainError("VALIDATION", "That unit is not in this property.", "unitId");
+    if (!u) throw new DomainError("VALIDATION", "That room is not in this property.", "unitId");
   }
   const same = await tx.select({ id: t.meters.id, unitId: t.meters.unitId, label: t.meters.label }).from(t.meters)
     .where(and(eq(t.meters.propertyId, p.id), isNull(t.meters.deletedAt)));
@@ -696,14 +699,14 @@ export function recordReading(ctx: Ctx, input: ReadingInput) {
 
     const readings = (await tx.select().from(t.meterReadings).where(and(eq(t.meterReadings.meterId, m.id), eq(t.meterReadings.status, "ACTIVE")))).sort(byTime);
     const last = readings.at(-1);
-    if (last && input.date < last.readingDate) throw new DomainError("VALIDATION", `The last reading is from ${last.readingDate}. Pick that date or later.`, "date");
+    if (last && input.date < last.readingDate) throw new DomainError("VALIDATION", `The last reading is from ${niceDate(last.readingDate)}. Choose that date or later.`, "date");
     if (last && input.date === last.readingDate) throw new DomainError("READING_DUPLICATE", "This meter already has a reading on that date.", "date");
     const lastMilli = last ? milli(last.value) : 0;
     if (input.replaced) {
       if (last && input.replaced.oldFinalMilli < lastMilli) throw new DomainError("VALIDATION", `The old meter's final reading can't be below ${formatScaled(lastMilli, 3)}.`, "oldFinal");
       if (input.valueMilli < input.replaced.newStartMilli) throw new DomainError("VALIDATION", "The reading can't be below the new meter's starting value.", "value");
     } else if (last && input.valueMilli < lastMilli) {
-      throw new DomainError("VALIDATION", `The reading can't be lower than the last one (${formatScaled(lastMilli, 3)}). If the meter was replaced, tick "Meter replaced".`, "value");
+      throw new DomainError("VALIDATION", `The reading can't be lower than the last one (${formatScaled(lastMilli, 3)}). If the meter was replaced, tick "The meter was replaced".`, "value");
     }
 
     const [tn] = m.unitId
@@ -754,13 +757,13 @@ export function voidReading(ctx: Ctx, readingId: string, reason: string) {
     const [r] = await tx.select().from(t.meterReadings).where(and(eq(t.meterReadings.id, readingId), eq(t.meterReadings.workspaceId, ctx.workspace.id)));
     if (!r || r.status === "VOID") throw new DomainError("NOT_FOUND", "Reading not found.");
     const readings = (await tx.select().from(t.meterReadings).where(and(eq(t.meterReadings.meterId, r.meterId), eq(t.meterReadings.status, "ACTIVE")))).sort(byTime);
-    if (readings.at(-1)!.id !== r.id) throw new DomainError("NOT_LATEST", "Only the latest reading can be voided. Void the later ones first.");
+    if (readings.at(-1)!.id !== r.id) throw new DomainError("NOT_LATEST", "Only the latest reading can be cancelled. Cancel the later ones first.");
     const group = readings.filter((x) => x.readingDate === r.readingDate); // includes a same-day meter replacement
     const [charge] = await tx.select().from(t.ledgerEntries).where(and(eq(t.ledgerEntries.meterReadingId, r.id), eq(t.ledgerEntries.status, "ACTIVE")));
-    if (charge?.settlementId) throw new DomainError("ENTRY_IN_SETTLEMENT", "This reading was billed in a move-out settlement and can't be voided.");
+    if (charge?.settlementId) throw new DomainError("ENTRY_IN_SETTLEMENT", "This reading was billed in a move-out final bill and can't be cancelled.");
     await tx.update(t.meterReadings).set({ status: "VOID", voidReason: reason, updatedBy: ctx.userId }).where(inArray(t.meterReadings.id, group.map((x) => x.id)));
     if (charge)
-      await tx.update(t.ledgerEntries).set({ status: "VOID", voidReason: `Reading voided: ${reason}`, voidedAt: sql`now()`, voidedBy: ctx.userId, updatedBy: ctx.userId })
+      await tx.update(t.ledgerEntries).set({ status: "VOID", voidReason: `Reading cancelled: ${reason}`, voidedAt: sql`now()`, voidedBy: ctx.userId, updatedBy: ctx.userId })
         .where(eq(t.ledgerEntries.id, charge.id));
     return { entityId: r.meterId, changes: { reading: r.id, reason, charge: charge?.id }, result: r.meterId };
   });

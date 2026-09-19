@@ -69,9 +69,9 @@ export default async function MeterPage({ params }: PageProps<"/meters/[id]">) {
                           {c ? (
                             <Link href={`/tenancies/${c.tenancyId}`} className={`${linkClass} ${c.status === "VOID" ? "line-through" : ""}`}>{money(c.amountMinor, c.currency)} · billed to {tenancyName(c.tenancyId)}</Link>
                           ) : <span className="text-fg-2">{TYPE_LABEL[r.readingType] || (r.tenancyId ? "Not billed" : "No tenant")}{r.readingType === "MOVE_IN" && r.tenancyId && ` · ${tenancyName(r.tenancyId)}`}</span>}
-                          {void_ && <Chip tone="neutral">VOID</Chip>}
+                          {void_ && <Chip tone="neutral">CANCELLED</Chip>}
                         </span>
-                        {void_ && r.voidReason && <span className="block text-[13px] text-fg-2">Void: {r.voidReason}</span>}
+                        {void_ && r.voidReason && <span className="block text-[13px] text-fg-2">Cancelled: {r.voidReason}</span>}
                       </td>
                       <td className="px-4 py-3 text-right">{r.id === latestId && <VoidReading id={r.id} summary={`${Number(r.value)} ${u} · ${longDate(r.readingDate)}`} />}</td>
                     </tr>

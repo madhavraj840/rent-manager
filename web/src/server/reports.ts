@@ -11,10 +11,10 @@ export interface Column { label: string; money?: boolean; right?: boolean; wrap?
 export interface Table { columns: Column[]; rows: Cell[][]; href?: (string | undefined)[] }
 
 export const REPORTS = {
-  collections: "Collections",
-  outstanding: "Outstanding",
-  deposits: "Deposits",
-  "rent-roll": "Rent roll",
+  collections: "Money received",
+  outstanding: "Unpaid",
+  deposits: "Deposits held",
+  "rent-roll": "Rooms and rent",
   expenses: "Expenses",
 } as const;
 
@@ -39,7 +39,7 @@ export function collections(p: Portfolio, from: string, to: string): Table {
     .map((r) => ({ r, v })))
     .sort((a, b) => b.r.entryDate.localeCompare(a.r.entryDate) || (b.r.receiptNumber ?? "").localeCompare(a.r.receiptNumber ?? ""));
   return {
-    columns: [{ label: "Date" }, { label: "Receipt" }, { label: "Tenant", wrap: true }, { label: "Unit" }, { label: "Property", wrap: true }, { label: "For" }, { label: "Method" }, { label: "Reference" }, { label: "Amount", money: true }],
+    columns: [{ label: "Date" }, { label: "Receipt" }, { label: "Tenant", wrap: true }, { label: "Room" }, { label: "Property", wrap: true }, { label: "For" }, { label: "Method" }, { label: "Reference" }, { label: "Amount", money: true }],
     rows: hits.map(({ r, v }) => [
       r.entryDate, r.receiptNumber, tenantName(v), v.unit.label, v.property.name,
       r.account === "DEPOSIT" ? (r.kind === "REFUND" ? "Deposit refund" : "Deposit") : r.kind === "REFUND" ? "Advance refund" : "Rent",
@@ -55,7 +55,7 @@ export function outstanding(p: Portfolio): Table {
   const owing = sortViews(p.views.filter((v) => v.tenancy.status !== "CLOSED" && v.balance.balance > 0))
     .sort((a, b) => b.balance.balance - a.balance.balance);
   return {
-    columns: [{ label: "Property", wrap: true }, { label: "Unit" }, { label: "Tenant", wrap: true }, { label: "Phone" }, { label: "Not yet due", money: true },
+    columns: [{ label: "Property", wrap: true }, { label: "Room" }, { label: "Tenant", wrap: true }, { label: "Phone" }, { label: "Not yet due", money: true },
       { label: "1–30 days", money: true }, { label: "31–60", money: true }, { label: "61–90", money: true }, { label: "90+", money: true },
       { label: "Total", money: true }, { label: "Oldest due" }, { label: "Last payment" }],
     rows: owing.map((v) => {
@@ -77,7 +77,7 @@ export function outstanding(p: Portfolio): Table {
 export function deposits(p: Portfolio): Table {
   const list = sortViews(p.views.filter((v) => v.rows.some((r) => r.account === "DEPOSIT" || r.kind === "DEPOSIT_APPLIED")));
   return {
-    columns: [{ label: "Property", wrap: true }, { label: "Unit" }, { label: "Tenant", wrap: true }, { label: "Tenancy" }, { label: "Agreed", money: true },
+    columns: [{ label: "Property", wrap: true }, { label: "Room" }, { label: "Tenant", wrap: true }, { label: "Tenant status" }, { label: "Agreed", money: true },
       { label: "Received", money: true }, { label: "Used for dues", money: true }, { label: "Returned", money: true },
       { label: "Held", money: true }, { label: "Still due", money: true }, { label: "Status" }],
     rows: list.map((v) => {
@@ -103,7 +103,7 @@ export function rentRoll(p: Portfolio): Table {
     const v = p.views.find((x) => x.unit.id === u.id && x.tenancy.status === "ACTIVE");
     if (!v) return { v, row: [prop.name, u.label, "Vacant", "", "", "", "", "", "", "", ""] as Cell[] };
     const tn = v.tenancy;
-    const status = tn.startDate > today ? "Upcoming" : tn.plannedMoveOutDate ? `On notice (leaves ${tn.plannedMoveOutDate})` : "Occupied";
+    const status = tn.startDate > today ? "Upcoming" : tn.plannedMoveOutDate ? `Leaving on ${tn.plannedMoveOutDate}` : "Let";
     const last = lastPayment(v);
     return {
       v,
@@ -112,8 +112,8 @@ export function rentRoll(p: Portfolio): Table {
     };
   });
   return {
-    columns: [{ label: "Property", wrap: true }, { label: "Unit" }, { label: "Status" }, { label: "Tenant", wrap: true }, { label: "Since" }, { label: "Lease end" },
-      { label: "Rent", money: true }, { label: "Deposit held", money: true }, { label: "Balance", money: true }, { label: "Overdue", money: true }, { label: "Last payment" }],
+    columns: [{ label: "Property", wrap: true }, { label: "Room" }, { label: "Status" }, { label: "Tenant", wrap: true }, { label: "Moved in" }, { label: "Agreement ends" },
+      { label: "Rent", money: true }, { label: "Deposit held", money: true }, { label: "Owes", money: true }, { label: "Overdue", money: true }, { label: "Last payment" }],
     rows: rows.map((r) => r.row),
     href: rows.map((r, i) => (r.v ? `/tenancies/${r.v.tenancy.id}` : `/properties/${units[i].prop.id}`)),
   };
@@ -126,7 +126,7 @@ export function expenseReport(p: Portfolio, from: string, to: string, propertyId
   const prop = (id: string | null) => (id ? p.properties.find((x) => x.id === id)?.name : "All properties");
   const unit = (id: string | null) => (id ? p.units.find((x) => x.id === id)?.label : "");
   return {
-    columns: [{ label: "Date" }, { label: "Property", wrap: true }, { label: "Unit" }, { label: "Category" }, { label: "Payee", wrap: true },
+    columns: [{ label: "Date" }, { label: "Property", wrap: true }, { label: "Room" }, { label: "Category" }, { label: "Payee", wrap: true },
       { label: "Method" }, { label: "Reference" }, { label: "Amount", money: true }, { label: "Note", wrap: true }],
     rows: list.map((e) => [e.expenseDate, prop(e.propertyId), unit(e.unitId), label(EXPENSE_CATEGORIES, e.category), e.payee,
       label(METHODS, e.method), e.reference, m(e.amountMinor, e.currency), e.note]),
@@ -140,7 +140,7 @@ export function statement(v: TenancyView): Table {
   const cur = v.tenancy.currency;
   return {
     columns: [{ label: "Date" }, { label: "Description", wrap: true }, { label: "Charge", money: true }, { label: "Paid / credit", money: true },
-      { label: "Balance", money: true }, { label: "Receipt" }, { label: "Method" }, { label: "Status" }],
+      { label: "Owes", money: true }, { label: "Receipt" }, { label: "Method" }, { label: "Status" }],
     rows: list.map(({ entry: e, running }) => {
       const plus = e.kind === "CHARGE" || e.kind === "REFUND";
       const r = rowById.get(e.id)!;

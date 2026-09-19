@@ -92,6 +92,7 @@ export default async function ExpensesPage({ searchParams }: PageProps<"/expense
                   <th className="px-4 py-2.5 font-medium">Expense</th>
                   <th className="px-4 py-2.5 font-medium max-md:hidden">Property</th>
                   <th className="px-4 py-2.5 text-right font-medium">Amount</th>
+                  <th className="px-2 py-2.5"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -104,26 +105,28 @@ export default async function ExpensesPage({ searchParams }: PageProps<"/expense
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`font-medium ${void_ ? "line-through" : ""}`}>{label(EXPENSE_CATEGORIES, e.category)}{e.payee && ` · ${e.payee}`}</span>
-                          {void_ && <Chip tone="neutral">VOID</Chip>}
+                          {void_ && <Chip tone="neutral">CANCELLED</Chip>}
                         </div>
                         <div className="flex flex-wrap items-center gap-x-1 text-[13px] text-fg-2">
                           <span className="md:hidden">{where} ·</span>
-                          {[label(METHODS, e.method), e.reference, e.note, void_ && e.voidReason && `Void: ${e.voidReason}`].filter(Boolean).join(" · ")}
+                          {[label(METHODS, e.method), e.reference, e.note, void_ && e.voidReason && `Cancelled: ${e.voidReason}`].filter(Boolean).join(" · ")}
                           {receipts.get(e.id)?.map((d, i, all) => (
                             <a key={d.id} href={`/files/${d.id}`} target="_blank" rel="noopener" className={`inline-flex items-center gap-1 ${linkClass}`}>
                               <Paperclip size={13} aria-hidden />Receipt{all.length > 1 && ` ${i + 1}`}
                             </a>
                           ))}
-                          {!void_ && (
-                            <>
-                              <ExpenseDialog o={options} e={e} />
-                              <VoidExpense id={e.id} summary={`${label(EXPENSE_CATEGORIES, e.category)} · ${money(e.amountMinor, e.currency)} · ${shortDate(e.expenseDate)}`} />
-                            </>
-                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 align-top max-md:hidden">{where}</td>
                       <td className={`num whitespace-nowrap px-4 py-3 text-right align-top font-medium ${void_ ? "line-through" : ""}`}>{money(e.amountMinor, e.currency)}</td>
+                      <td className="whitespace-nowrap px-2 py-2.5 text-right align-top">
+                        {!void_ && (
+                          <span className="inline-flex gap-1">
+                            <ExpenseDialog o={options} e={e} />
+                            <VoidExpense id={e.id} summary={`${label(EXPENSE_CATEGORIES, e.category)} · ${money(e.amountMinor, e.currency)} · ${shortDate(e.expenseDate)}`} />
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}

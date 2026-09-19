@@ -190,7 +190,7 @@ function ReadingFields({ r, state }: { r: ReadingContext; state: Parameters<type
         {!r.tenant ? "The reading is saved to this meter's history. Nobody is billed: there is no current tenant."
           : !r.prev ? `This is ${r.tenant.name}'s first reading, so it is saved as their starting point. Nobody is billed now; the next reading is billed from here.`
           : !bill ? "The reading is saved to this meter's history. Nobody is billed."
-          : billText ? <>{billText} is added to what {r.tenant.name} owes, and shows under Payments and charges on their tenancy page. The reading is saved to this meter&apos;s history.</>
+          : billText ? <>{billText} is added to what {r.tenant.name} owes, and shows under Payments and charges on their page. The reading is saved to this meter&apos;s history.</>
           : `Enter the current reading to see the bill for ${r.tenant.name}.`}
       </Outcome>
     </>
@@ -200,13 +200,13 @@ function ReadingFields({ r, state }: { r: ReadingContext; state: Parameters<type
 export function VoidReading({ id, summary }: { id: string; summary: string }) {
   return (
     <DialogForm
-      trigger="Void" triggerClass={btn.link} title="Void this reading?" subtitle={summary}
-      action={voidReadingAction} submitLabel="Void reading" fields={["reason"]} hidden={{ id }}
+      trigger="Cancel" triggerClass={btn.link} title="Cancel this reading?" subtitle={summary}
+      action={voidReadingAction} submitLabel="Cancel reading" fields={["reason"]} hidden={{ id }}
     >
       {(state) => (
         <>
-          <p className="text-sm text-fg-2">The reading stays in the history, struck through. If it was billed, that charge is voided too.</p>
-          <Field label="Reason" name="reason" state={state}>
+          <p className="text-sm text-fg-2">Use this when the reading was typed wrong. It stays in the history, crossed out. If it was billed, that bill is cancelled too. Then enter the right reading.</p>
+          <Field label="Why is it wrong?" name="reason" state={state}>
             <Input name="reason" state={state} maxLength={200} placeholder="e.g. Misread the meter" required />
           </Field>
         </>

@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Version | 0.1 |
-| Status | Draft, awaiting owner review |
-| Date | 2026-09-19 |
+| Version | 0.2 |
+| Status | In use. Every screen must follow it. |
+| Date | 2026-09-20 (0.1: 2026-09-19) |
 | Extends | [09 UI/UX Specification](09_UI_UX_SPECIFICATION.md). It changes no features, data or rules; it only covers how screens explain themselves. |
 
 ## 1. Why this document exists
@@ -85,8 +85,24 @@ Detail never appears above the summary.
 | Readings round | **Enter all readings** | Property page |
 | Last reading / Reading | **Previous reading / Current reading** | Everywhere |
 | Used | **Units used** | Meters |
+| Tenancy | **Tenant** (the person renting), or "Asha Rao in Room 101" | Everywhere |
+| New tenancy / Start tenancy | **Add tenant** | Buttons |
+| Existing tenancy | **Tenant already living here** | Add tenant form |
+| Past tenancies | **Past tenants** | Property page |
+| Unit | **Room** (the type list still offers Flat, Shop, Bed…) | Everywhere |
+| Void / VOID | **Cancel** / **CANCELLED** ("stays in the history, crossed out") | Money, readings, expenses |
+| Give notice / Record notice | **Tenant is leaving** | Tenant page |
+| Withdraw notice | **Not leaving any more** | Tenant page |
+| On notice | **Leaving on {date}** | Banners, lists |
+| Settlement / Finalize | **Final bill** / **Finish move-out** | Move-out |
+| Grace days | **Days to pay** | Forms, terms |
+| Opening balance | **Owed from before** | Forms, history |
+| Outstanding | **Unpaid** | Dashboard, reports |
+| Rent roll | **Rooms and rent** | Reports |
+| Collections | **Money received** | Reports |
+| Workspace | **Your account** (or the business name) | Headers, history |
 
-"Void" stays, because it is a money term the docs use. Its dialog explains it in one sentence: "It stays in the history, struck through."
+Code, database and spec documents keep their technical names (`tenancy`, `unit`, `void`). These words are only for what people read.
 
 ### C-9: Numbers always carry a label
 
@@ -96,6 +112,19 @@ Detail never appears above the summary.
 ### C-10: Empty places say what to do next
 
 An empty list names the next step and gives the button for it, for example "No meters yet. **Add meter** to bill electricity by reading." It never says just "Nothing here".
+
+### C-11: Simple English, and never show internal values
+
+- Short sentences and common words. Many readers use English as a second language.
+- **Never show an internal code, ID or scaled number.** Not `REPAIR`, not `b2dd…-…`, not `value milli 12000`. Show "Repair", hide the ID, and show "12 kWh".
+- **Every form explains itself in its first line:** when to use it and what it changes. The "Tenant is leaving" form starts with "Use this when the tenant tells you they will leave, or you ask them to leave."
+- **Error messages say what is wrong and what to do**, using the real values. Not "Move-out can't be before move-in." but "The leaving date can't be before they moved in (1 Sep 2026). Choose a later date."
+- **Radio buttons and options are full phrases** ("The tenant told me", "I asked them to leave"), not single words ("Tenant", "Landlord").
+
+### C-12: Status plus reason
+
+A status chip is short, so the reason is shown next to it. For example: "PAID · ₹3,500 received 20 Sep", "LEAVING · on 12 Oct", "OVERDUE · 50 days".
+Only a few colours are used, and each means one thing: green = fine, amber = coming up or partly paid, red = late or needs action, grey = neutral (for example a vacant room or a cancelled entry). A vacant room is not an error, so it is grey.
 
 ## 3. Shared building blocks
 
@@ -124,9 +153,14 @@ These live in `web/src/components/ui.tsx`, so every page gets the same behaviour
 | Property page | Grey back-link | Breadcrumbs | C-2 |
 | All sub-pages (edit, units, move-out, new) | Grey back-link | Breadcrumbs | C-2 |
 
+| Tenant page | "Tenancy", "Give notice" and "Void" were unclear | Plain words (C-8); the "Tenant is leaving" form explains itself and gives full-phrase options | C-8, C-11 |
+| Documents card | New in 0.2 | Stretched rows that open the file; the add form has a "What happens" box; the toast names the place | C-1, C-5, C-6 |
+| Expenses | No "What happens" box; the toast didn't say where; the Edit/Cancel links were hidden in the text line | "What happens" box; the toast says where; Edit and Cancel get their own column | C-3, C-5, C-6 |
+| Change history | Details showed IDs, codes and scaled numbers | Plain names and real values; IDs hidden | C-11 |
+
 ## 5. How to check a new screen
 
-Before a screen ships, answer yes to all six questions:
+Before a screen ships, answer yes to all seven questions:
 
 1. Does it have breadcrumbs (unless it is a top-level page)?
 2. Does it have exactly one primary button, labelled with a verb and a thing?
@@ -134,8 +168,27 @@ Before a screen ships, answer yes to all six questions:
 4. Does every form that creates money show "What happens when you save"?
 5. Does the confirmation say what happened and where to see it?
 6. Are the words the ones in the C-8 table?
+7. Is it free of internal codes and IDs, and does each form say in its first line when to use it (C-11)?
 
-## 6. Out of scope
+## 6. Ideas to build next (from the owner's notes in `temp.txt`)
+
+These fit the rules above and are planned. Tick them off as they ship.
+
+- [ ] **Exception-first dashboard:** when nothing needs action, show one short "All caught up" line instead of empty boxes. Sections grow only when something exists.
+- [ ] **Dashboard money shown as a sum:** Collected − Expenses = Net, with Unpaid and Overdue kept visibly different (amber vs red).
+- [ ] **Relative dates next to exact ones:** "Due in 3 days · 30 Sep", "15 days overdue".
+- [ ] **One date format everywhere:** "1 Sep 2026" (short form "1 Sep" inside lists).
+- [ ] **Money right-aligned** in every table and summary.
+- [ ] **Date presets** on Expenses, Reports and History: This month, Last month, Last 30 days, This year.
+- [ ] **Move-out as a checklist** with progress (notice → final readings → dues → deposit → keys → done).
+- [ ] **Property row as a portfolio line:** occupied/vacant bar, monthly rent, unpaid.
+- [ ] **Search results name their type:** "Tenant · Room 101", "Room · Green View".
+- [ ] **Undo** for safe, reversible actions (for example "Not leaving any more").
+- [ ] **Recent activity** on the dashboard ("since your last visit").
+- [ ] **Warn about unusual amounts:** "This is much higher than the usual rent of ₹3,500. Continue?"
+- [ ] **Tenant app:** separate, mobile-first and much simpler (V1).
+
+## 7. Out of scope
 
 - No new features, no changes to the money rules, and no new pages.
 - The colours, fonts and layout grid of 09 §3 stay as they are.

@@ -22,7 +22,7 @@ export default async function TenantsPage({ searchParams }: PageProps<"/tenants"
       <PageHeader
         title="Tenants"
         sub={`${rows.length} ${former ? "former" : "current"} tenants`}
-        actions={<Link href="/tenancies/new" className={buttonClass.primary}>New tenancy</Link>}
+        actions={<Link href="/tenancies/new" className={buttonClass.primary}>Add tenant</Link>}
       />
       <nav aria-label="Filter" className="mb-4 inline-flex rounded-md border border-line-strong bg-surface p-0.5 text-sm">
         {[["Current", "/tenants"], ["Former", "/tenants?show=former"]].map(([l, href]) => {
@@ -35,14 +35,14 @@ export default async function TenantsPage({ searchParams }: PageProps<"/tenants"
       </nav>
       <Card>
         {!rows.length ? (
-          <Empty>{former ? "No former tenants yet." : "No tenants yet. Tenants are added when you start a tenancy."}</Empty>
+          <Empty>{former ? "No former tenants yet." : "No tenants yet. Use Add tenant to add the first one."}</Empty>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-line text-left text-[13px] text-fg-2">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Name</th>
-                  <th className="px-4 py-2.5 font-medium">Unit</th>
+                  <th className="px-4 py-2.5 font-medium">Room</th>
                   <th className="px-4 py-2.5 font-medium max-md:hidden">Phone</th>
                   <th className="px-4 py-2.5 text-right font-medium">Balance</th>
                   <th className="px-4 py-2.5 font-medium max-sm:hidden"><span className="sr-only">Status</span></th>

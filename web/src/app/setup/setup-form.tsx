@@ -24,7 +24,7 @@ export function SetupForm() {
         <Field label="Your name" name="fullName" state={state}><Input name="fullName" state={state} autoComplete="name" required maxLength={100} /></Field>
         <Field label="Email" name="email" state={state}><Input type="email" name="email" state={state} autoComplete="email" required /></Field>
       </div>
-      <Field label="Workspace name" name="name" state={state} hint="Usually your name or business, e.g. Sharma Rentals">
+      <Field label="Business name" name="name" state={state} hint="Usually your name or business, e.g. Sharma Rentals">
         <Input name="name" state={state} required maxLength={80} />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -44,7 +44,7 @@ export function SetupForm() {
           {zones.map((z) => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}
         </Select>
       </Field>
-      <Submit pending={pending} className="w-full">Create workspace</Submit>
+      <Submit pending={pending} className="w-full">Start using the app</Submit>
     </form>
   );
 }

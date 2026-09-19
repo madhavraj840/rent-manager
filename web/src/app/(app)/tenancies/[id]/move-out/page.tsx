@@ -23,11 +23,11 @@ export default async function MoveOutPage({ params, searchParams }: PageProps<"/
   return (
     <div className="mx-auto max-w-2xl">
       <Crumbs items={[["Properties", "/properties"], [v.property.name, `/properties/${v.property.id}`], [`${v.unit.label} · ${v.people[0]?.fullName ?? ""}`, `/tenancies/${id}`], ["Move out"]]} />
-      <PageHeader title="Move out" sub="Check the final amounts, then finalize. The deposit covers any dues first." />
+      <PageHeader title="Move out" sub="Check the final bill, then finish. Anything the tenant still owes is taken from the deposit first." />
 
       <form className="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-line bg-surface p-5">
         <div>
-          <label htmlFor="date" className="mb-1.5 block text-sm font-medium">Last day in the unit</label>
+          <label htmlFor="date" className="mb-1.5 block text-sm font-medium">Last day in the room</label>
           <input id="date" type="date" name="date" defaultValue={moveOut} min={v.tenancy.startDate} max={ctx.today}
             className="h-10 rounded-md border border-line-strong bg-surface px-3" />
         </div>

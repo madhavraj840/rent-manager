@@ -9,10 +9,10 @@ import { Card, PageHeader, buttonClass } from "@/components/ui";
 export const metadata: Metadata = { title: "Reports" };
 
 const DESCRIPTIONS: Record<ReportType, string> = {
-  collections: "Money received and returned between two dates. Opening balances are left out.",
+  collections: "Money received and returned between two dates. Money owed from before you used this app is left out.",
   outstanding: "Who owes money today, grouped by how many days past the due date.",
   deposits: "Deposits are held for tenants and are not income.",
-  "rent-roll": "Every unit, who is in it and what it earns.",
+  "rent-roll": "Every room, who lives there and what it earns.",
   expenses: "Money spent on the properties between two dates.",
 };
 

@@ -22,7 +22,7 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
   const s = monthSummary(current, ctx.today.slice(0, 7));
   const pu = units.filter((u) => u.propertyId === p.id);
   const spent = expensesIn(portfolio, ctx.today.slice(0, 7), p.currency, p.id);
-  const addUnits = <Link href={`/properties/${p.id}/units`} className={buttonClass.primary}>Add units</Link>;
+  const addUnits = <Link href={`/properties/${p.id}/units`} className={buttonClass.primary}>Add rooms</Link>;
 
   return (
     <>
@@ -37,10 +37,10 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
         {[
           ["Due this month", money(s.billed, p.currency)],
           ["Collected this month", money(s.collected, p.currency)],
-          ["Outstanding", money(s.outstanding, p.currency)],
+          ["Unpaid", money(s.outstanding, p.currency)],
           ["Spent this month", money(spent, p.currency)],
-          ["Net this month", money(s.collected - spent, p.currency)],
-          ["Occupied", `${current.length} of ${pu.length}`],
+          ["Left after expenses", money(s.collected - spent, p.currency)],
+          ["Rooms let", `${current.length} of ${pu.length}`],
         ].map(([k, v]) => (
           <div key={k} className="bg-surface px-4 py-3">
             <p className="text-[13px] text-fg-2">{k}</p>
@@ -49,9 +49,9 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
         ))}
       </div>
 
-      <Card title={`Units (${pu.length})`} className="overflow-hidden">
+      <Card title={`Rooms (${pu.length})`} className="overflow-hidden">
         {!pu.length ? (
-          <Empty action={addUnits}>No units yet. Add one, or add many at once.</Empty>
+          <Empty action={addUnits}>No rooms yet. Add one, or add many at once.</Empty>
         ) : (
           <ul className="-mb-px -mr-px grid sm:grid-cols-2 lg:grid-cols-3">
             {pu.map((u) => {
@@ -77,7 +77,7 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
                         {label(UNIT_TYPES, u.type)}{u.defaultRentMinor ? ` · asking ${money(u.defaultRentMinor, p.currency)}` : ""}
                       </p>
                       <Link href={`/tenancies/new?unit=${u.id}`} className={`mt-1.5 inline-block text-[13px] ${linkClass}`}>
-                        Start tenancy
+                        Add tenant
                       </Link>
                     </div>
                   )}
@@ -97,7 +97,7 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
       </div>
 
       {past.length > 0 && (
-        <Card title="Past tenancies" className="mt-6">
+        <Card title="Past tenants" className="mt-6">
           <ul className="divide-y divide-line text-sm">
             {past.map((v) => (
               <li key={v.tenancy.id}>

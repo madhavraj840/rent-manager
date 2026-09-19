@@ -6,7 +6,7 @@ import { saveExpenseAction, voidExpenseAction } from "@/app/actions";
 import { currencyDigits } from "@/lib/money";
 import { EXPENSE_CATEGORIES, METHODS, PAY_METHODS } from "@/lib/labels";
 import { DialogForm } from "./dialog-form";
-import { Field, Input, MoneyInput, Select } from "./form";
+import { Field, Input, MoneyInput, Outcome, Select } from "./form";
 
 export interface ExpenseOptions {
   today: string;
@@ -45,6 +45,7 @@ function ExpenseFields({ o, e, initialProperty, state }: {
   const [propertyId, setPropertyId] = useState(initialProperty);
   const currency = o.properties.find((p) => p.id === propertyId)?.currency ?? o.defaultCurrency;
   const units = o.units.filter((u) => u.propertyId === propertyId);
+  const propName = o.properties.find((p) => p.id === propertyId)?.name;
   const amount = e ? (e.amountMinor / 10 ** currencyDigits(e.currency)).toString() : "";
   return (
     <>
@@ -98,7 +99,11 @@ function ExpenseFields({ o, e, initialProperty, state }: {
         <input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"
           className="block w-full text-sm file:mr-3 file:h-9 file:rounded-md file:border file:border-line-strong file:bg-surface file:px-3 file:font-medium hover:file:bg-surface-2" />
       </Field>
-      <p className="text-[13px] text-fg-2">Charging this to a tenant? Add it here, then use Add charge on their tenancy.</p>
+      <Outcome>
+        The expense is saved under Expenses{propName ? ` for ${propName}` : " as a general expense"}. It lowers &quot;Left after expenses&quot; on the dashboard for that month.
+        {" "}A receipt, if you add one, opens from the expense row.
+      </Outcome>
+      <p className="text-[13px] text-fg-2">Want the tenant to pay this? Add it here, then use Add charge on the tenant&apos;s page.</p>
     </>
   );
 }
@@ -106,13 +111,13 @@ function ExpenseFields({ o, e, initialProperty, state }: {
 export function VoidExpense({ id, summary }: { id: string; summary: string }) {
   return (
     <DialogForm
-      trigger="Void" triggerClass={btn.link} title="Void this expense?" subtitle={summary}
-      action={voidExpenseAction} submitLabel="Void expense" fields={["reason"]} hidden={{ id }}
+      trigger="Cancel" triggerClass={btn.link} title="Cancel this expense?" subtitle={summary}
+      action={voidExpenseAction} submitLabel="Cancel expense" fields={["reason"]} hidden={{ id }}
     >
       {(state) => (
         <>
-          <p className="text-sm text-fg-2">It stays in the list, struck through, and no longer counts in any total.</p>
-          <Field label="Reason" name="reason" state={state}>
+          <p className="text-sm">Use this when the expense is wrong, for example it was entered twice. It stays in the list, crossed out, and no longer counts in any total.</p>
+          <Field label="Why is it wrong?" name="reason" state={state}>
             <Input name="reason" state={state} maxLength={200} placeholder="e.g. Entered twice" required />
           </Field>
         </>

@@ -37,7 +37,7 @@ export function PropertyForm({ p, currencyLocked }: { p: P; currencyLocked?: boo
             {COUNTRIES.map(([c]) => [c, countryName(c)] as const).sort((a, b) => a[1].localeCompare(b[1])).map(([c, n]) => <option key={c} value={c}>{n}</option>)}
           </Select>
         </Field>
-        <Field label="Currency" name="currency" state={state} hint={currencyLocked ? "Locked because this property has tenancies." : "All rent and deposits for this property use it."}>
+        <Field label="Currency" name="currency" state={state} hint={currencyLocked ? "Locked, because this property already has tenants." : "All rent and deposits for this property use it."}>
           {currencyLocked && <input type="hidden" name="currency" value={currency} />}
           <Select name={currencyLocked ? "currency-locked" : "currency"} state={state} value={currency} disabled={currencyLocked} onChange={(e) => setCurrency(e.target.value)}>
             {[...new Set([...CURRENCIES, currency])].map((c) => <option key={c} value={c}>{c}</option>)}

@@ -23,7 +23,7 @@ export default async function PropertiesPage() {
 
   return (
     <>
-      <PageHeader title="Properties" sub={`${properties.length} properties · ${units.length} units`} actions={add} />
+      <PageHeader title="Properties" sub={`${properties.length} properties · ${units.length} rooms`} actions={add} />
       <Card>
         {!rows.length ? (
           <Empty action={add}>No properties yet. Add your first building or house.</Empty>
@@ -34,7 +34,7 @@ export default async function PropertiesPage() {
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Property</th>
                   <th className="px-4 py-2.5 font-medium">Occupancy</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Outstanding</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Unpaid</th>
                   <th className="px-4 py-2.5 text-right font-medium max-sm:hidden">Overdue</th>
                   <th className="w-8"><span className="sr-only">Open</span></th>
                 </tr>
@@ -47,7 +47,7 @@ export default async function PropertiesPage() {
                       <div className="text-[13px] text-fg-2">{[label(PROPERTY_TYPES, p.type), p.city].filter(Boolean).join(" · ")}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="num">{total ? `${occupied}/${total} occupied` : "No units"}</div>
+                      <div className="num">{total ? `${occupied} of ${total} rooms let` : "No rooms yet"}</div>
                       {total > 0 && (
                         <div className="mt-1 h-1 w-24 overflow-hidden rounded-full bg-surface-2">
                           <div className="h-full bg-primary" style={{ width: `${(occupied / total) * 100}%` }} />

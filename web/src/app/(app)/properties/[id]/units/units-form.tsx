@@ -28,14 +28,14 @@ export function UnitsForm({ propertyId, currency, existing }: { propertyId: stri
         {(["one", "many"] as const).map((m) => (
           <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
             className={`h-8 rounded px-4 text-sm font-medium ${mode === m ? "bg-primary text-on-primary" : "text-fg-2 hover:text-fg"}`}>
-            {m === "one" ? "One unit" : "Many at once"}
+            {m === "one" ? "One room" : "Many at once"}
           </button>
         ))}
       </div>
       <FormError state={state} fields={["label", "pattern", "count", "type", "rent", "deposit"]} />
 
       {mode === "one" ? (
-        <Field label="Unit name" name="label" state={state} hint="e.g. Flat 101, Room 3, Bed A">
+        <Field label="Room name" name="label" state={state} hint="e.g. Flat 101, Room 3, Bed A">
           <Input name="label" state={state} required maxLength={40} />
         </Field>
       ) : (
@@ -74,7 +74,7 @@ export function UnitsForm({ propertyId, currency, existing }: { propertyId: stri
         <Field label="Floor or block (optional)" name="floorLabel"><Input name="floorLabel" maxLength={40} placeholder="e.g. Ground floor" /></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Usual rent (optional)" name="rent" state={state} hint="Prefills new tenancies.">
+        <Field label="Usual rent (optional)" name="rent" state={state} hint="Filled in for you when you add a tenant.">
           <MoneyInput name="rent" state={state} currency={currency} />
         </Field>
         <Field label="Usual deposit (optional)" name="deposit" state={state}>
@@ -82,7 +82,7 @@ export function UnitsForm({ propertyId, currency, existing }: { propertyId: stri
         </Field>
       </div>
       <div className="flex justify-end">
-        <Submit pending={pending}>{mode === "one" ? "Add unit" : `Add ${labels.length} units`}</Submit>
+        <Submit pending={pending}>{mode === "one" ? "Add room" : `Add ${labels.length} rooms`}</Submit>
       </div>
     </form>
   );

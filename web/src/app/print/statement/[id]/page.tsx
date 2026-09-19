@@ -60,7 +60,7 @@ export default async function StatementPage({ params }: PageProps<"/print/statem
           </div>
         ))}
       </dl>
-      <p className="mt-8 text-xs text-fg-2">Generated on {longDate(ctx.today)}. Voided entries are marked VOID and do not count in any balance.</p>
+      <p className="mt-8 text-xs text-fg-2">Generated on {longDate(ctx.today)}. Cancelled entries are marked CANCELLED and do not count in any balance.</p>
     </article>
   );
 }

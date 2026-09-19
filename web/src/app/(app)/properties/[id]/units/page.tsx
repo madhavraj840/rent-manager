@@ -4,7 +4,7 @@ import { loadPortfolio } from "@/server/queries";
 import { Crumbs, PageHeader } from "@/components/ui";
 import { UnitsForm } from "./units-form";
 
-export const metadata: Metadata = { title: "Add units" };
+export const metadata: Metadata = { title: "Add rooms" };
 
 // SCR-24 Add units
 export default async function AddUnitsPage({ params }: PageProps<"/properties/[id]/units">) {
@@ -15,8 +15,8 @@ export default async function AddUnitsPage({ params }: PageProps<"/properties/[i
   const existing = units.filter((u) => u.propertyId === p.id).map((u) => u.label.toLowerCase());
   return (
     <div className="mx-auto max-w-2xl">
-      <Crumbs items={[["Properties", "/properties"], [p.name, `/properties/${p.id}`], ["Add units"]]} />
-      <PageHeader title="Add units" sub="A unit is anything rented separately: a flat, a room or a bed." />
+      <Crumbs items={[["Properties", "/properties"], [p.name, `/properties/${p.id}`], ["Add rooms"]]} />
+      <PageHeader title="Add rooms" sub="A room is anything you rent out on its own: a room, a flat, a shop or a bed." />
       <UnitsForm propertyId={p.id} currency={p.currency} existing={existing} />
     </div>
   );

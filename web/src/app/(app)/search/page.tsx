@@ -29,7 +29,7 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
 
   return (
     <>
-      <PageHeader title="Search" sub={q ? `${total} ${total === 1 ? "result" : "results"} for “${q}”` : "Search by tenant name, phone, unit, property or receipt number."} />
+      <PageHeader title="Search" sub={q ? `${total} ${total === 1 ? "result" : "results"} for “${q}”` : "Search by tenant name, phone, room, property or receipt number."} />
       <form action="/search" role="search" className="mb-6 flex gap-2">
         <input name="q" defaultValue={q} aria-label="Search" autoFocus className="h-10 w-full max-w-md rounded-md border border-line-strong bg-surface px-3" />
         <button className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-on-primary hover:bg-primary-hover">Search</button>
@@ -45,7 +45,7 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
           </Group>
         )}
         {unitHits.length > 0 && (
-          <Group title="Units">
+          <Group title="Rooms">
             {unitHits.map((u) => <Hit key={u.id} href={unitLink(u.id)} title={u.label} sub={properties.find((p) => p.id === u.propertyId)?.name} />)}
           </Group>
         )}
@@ -57,7 +57,7 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
         {receiptHits.length > 0 && (
           <Group title="Receipts & references">
             {receiptHits.map(({ r, v }) => (
-              <Hit key={r.id} href={`/tenancies/${v.tenancy.id}`} title={`${r.receiptNumber ?? r.reference} · ${money(r.amountMinor, r.currency)}${r.status === "VOID" ? " (void)" : ""}`}
+              <Hit key={r.id} href={`/tenancies/${v.tenancy.id}`} title={`${r.receiptNumber ?? r.reference} · ${money(r.amountMinor, r.currency)}${r.status === "VOID" ? " (cancelled)" : ""}`}
                 sub={`${shortDate(r.entryDate)} · ${v.unit.label} · ${v.people[0]?.fullName}`} />
             ))}
           </Group>

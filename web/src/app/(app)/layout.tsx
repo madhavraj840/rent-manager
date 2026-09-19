@@ -32,7 +32,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           </Link>
           <form action="/search" role="search" className="ml-auto hidden h-9 w-full max-w-xs sm:flex items-center gap-2 rounded-md border border-line bg-bg px-2.5 text-sm text-fg-2 focus-within:outline-2 focus-within:outline-primary">
             <Search size={16} aria-hidden />
-            <input name="q" aria-label="Search" placeholder="Search tenants, units, receipts" className="w-full min-w-0 bg-transparent text-fg outline-none placeholder:text-fg-2" />
+            <input name="q" aria-label="Search" placeholder="Search tenants, rooms, receipts" className="w-full min-w-0 bg-transparent text-fg outline-none placeholder:text-fg-2" />
           </form>
           <span aria-label="Account" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-fg-2">
             <UserRound size={17} aria-hidden />

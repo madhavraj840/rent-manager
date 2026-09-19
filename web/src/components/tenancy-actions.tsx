@@ -165,7 +165,7 @@ function ChargeFields({ p, state }: { p: PaymentContext; state: Parameters<typeo
 export function AddCredit({ p }: { p: PaymentContext }) {
   return (
     <DialogForm
-      trigger="Discount" triggerClass={btn.secondary} title="Discount or waiver" subtitle={p.title}
+      trigger="Discount" triggerClass={btn.secondary} title="Give a discount" subtitle={p.title}
       action={addCreditAction} submitLabel="Save" fields={["category", "amount", "date", "reason"]}
       hidden={{ tenancyId: p.tenancyId }}
     >
@@ -192,23 +192,24 @@ export function AddCredit({ p }: { p: PaymentContext }) {
   );
 }
 
-// ---------- SCR-47 Void ----------
+// ---------- SCR-47 Cancel an entry (void) ----------
 
 export function VoidEntry({ entryId, summary, receipt }: { entryId: string; summary: string; receipt?: string }) {
   return (
     <DialogForm
-      trigger="Void" triggerClass={btn.link} title="Void this entry?" subtitle={summary}
-      action={voidEntryAction} submitLabel="Void entry" fields={["reason"]} hidden={{ entryId }}
+      trigger="Cancel" triggerClass={btn.link} title="Cancel this entry?" subtitle={summary}
+      action={voidEntryAction} submitLabel="Cancel entry" fields={["reason"]} hidden={{ entryId }}
     >
       {(state) => (
         <>
-          <p className="text-sm text-fg-2">
-            The entry stays in the history, struck through, and no longer counts in any balance.
-            {receipt && ` Receipt ${receipt} will show VOID.`} To fix a mistake, void it and record it again.
-          </p>
-          <Field label="Reason" name="reason" state={state}>
+          <p className="text-sm">Use this when the entry is wrong, for example it was entered twice or has the wrong amount.</p>
+          <Field label="Why is it wrong?" name="reason" state={state}>
             <Input name="reason" state={state} maxLength={200} placeholder="e.g. Entered twice" required />
           </Field>
+          <Outcome>
+            The entry stays in the list, crossed out, and no longer counts in any balance.
+            {receipt && ` Receipt ${receipt} will show CANCELLED.`} To correct it, cancel it and then enter it again.
+          </Outcome>
         </>
       )}
     </DialogForm>
@@ -241,7 +242,7 @@ function RentFields({ p, state, cycleDay, nextStart, chargedStarts }: {
         <MoneyInput name="rent" state={state} currency={p.currency} required />
       </Field>
       <Field label="From" name="effectiveFrom" state={state}
-        hint={`Must be a rent day (the ${cycleDay}${cycleDay === 1 ? "st" : "th"}).${already ? ` ${already} ${already === 1 ? "month is" : "months are"} already charged from this date; the difference is added as an adjustment you can void.` : ""}`}>
+        hint={`Must be a rent day (the ${cycleDay}${cycleDay === 1 ? "st" : "th"}).${already ? ` ${already} ${already === 1 ? "month is" : "months are"} already charged from this date. The difference is added as a correction, which you can cancel.` : ""}`}>
         <Input type="date" name="effectiveFrom" state={state} value={from} onChange={(e) => setFrom(e.target.value)} required />
       </Field>
       <Field label="Reason (optional)" name="reason" state={state}>
@@ -251,44 +252,65 @@ function RentFields({ p, state, cycleDay, nextStart, chargedStarts }: {
   );
 }
 
-// ---------- Notice (F-MOUT-1) ----------
+// ---------- Tenant is leaving: notice (F-MOUT-1) ----------
 
-export function GiveNotice({ p, leaseEnd }: { p: PaymentContext; leaseEnd?: string | null }) {
+export function GiveNotice({ p, name, startDate, leaseEnd }: { p: PaymentContext; name: string; startDate: string; leaseEnd?: string | null }) {
   return (
     <DialogForm
-      trigger="Give notice" triggerClass={btn.secondary} title="Record notice" subtitle={p.title}
-      action={giveNoticeAction} submitLabel="Save notice" fields={["noticeDate", "plannedMoveOut", "givenBy"]} hidden={{ tenancyId: p.tenancyId }}
+      trigger="Tenant is leaving" triggerClass={btn.secondary} title="Tenant is leaving" subtitle={p.title}
+      action={giveNoticeAction} submitLabel="Save leaving date" fields={["noticeDate", "plannedMoveOut", "givenBy"]} hidden={{ tenancyId: p.tenancyId }}
     >
-      {(state) => (
-        <>
-          <fieldset>
-            <legend className="mb-1.5 text-sm font-medium">Given by</legend>
-            <div className="flex gap-4 text-sm">
-              <label className="flex items-center gap-2"><input type="radio" name="givenBy" value="TENANT" defaultChecked /> Tenant</label>
-              <label className="flex items-center gap-2"><input type="radio" name="givenBy" value="LANDLORD" /> Landlord</label>
-            </div>
-          </fieldset>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Notice date" name="noticeDate" state={state}>
-              <Input type="date" name="noticeDate" state={state} defaultValue={p.today} max={p.today} required />
-            </Field>
-            <Field label="Leaving on" name="plannedMoveOut" state={state}>
-              <Input type="date" name="plannedMoveOut" state={state} defaultValue={leaseEnd && leaseEnd >= p.today ? leaseEnd : addDays(p.today, 30)} required />
-            </Field>
-          </div>
-          <p className="text-[13px] text-fg-2">No rent is charged for months that start after this date. Finish with Move out on the day they leave.</p>
-        </>
-      )}
+      {(state) => <NoticeFields p={p} name={name} startDate={startDate} leaseEnd={leaseEnd} state={state} />}
     </DialogForm>
+  );
+}
+
+function NoticeFields({ p, name, startDate, leaseEnd, state }: {
+  p: PaymentContext; name: string; startDate: string; leaseEnd?: string | null; state: Parameters<typeof Field>[0]["state"];
+}) {
+  const [by, setBy] = useState<"TENANT" | "LANDLORD">("TENANT");
+  const [leaving, setLeaving] = useState(leaseEnd && leaseEnd >= p.today ? leaseEnd : addDays(p.today, 30));
+  const nice = (d: string) => new Date(d + "T00:00:00Z").toLocaleDateString(p.locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  const option = "flex items-center gap-2 rounded-md border border-line-strong px-3 py-2 has-[:checked]:border-primary has-[:checked]:bg-primary-soft";
+  return (
+    <>
+      <p className="text-sm">
+        Use this when {name} tells you they will leave, or when you ask them to leave. It only saves the leaving date. They move out later, with <span className="font-medium">Move out</span>.
+      </p>
+      <fieldset>
+        <legend className="mb-1.5 text-sm font-medium">Who decided?</legend>
+        <div className="grid gap-2 text-sm">
+          <label className={option}><input type="radio" name="givenBy" value="TENANT" checked={by === "TENANT"} onChange={() => setBy("TENANT")} /> {name} told me they are leaving</label>
+          <label className={option}><input type="radio" name="givenBy" value="LANDLORD" checked={by === "LANDLORD"} onChange={() => setBy("LANDLORD")} /> I asked {name} to leave</label>
+        </div>
+      </fieldset>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={by === "TENANT" ? "Date they told you" : "Date you told them"} name="noticeDate" state={state}>
+          <Input type="date" name="noticeDate" state={state} defaultValue={p.today} min={startDate} max={p.today} required />
+        </Field>
+        <Field label="Last day in the room" name="plannedMoveOut" state={state}>
+          <Input type="date" name="plannedMoveOut" state={state} value={leaving} onChange={(e) => setLeaving(e.target.value)} min={startDate} required />
+        </Field>
+      </div>
+      <Outcome>
+        {leaving ? <>This page will show &quot;Leaving on {nice(leaving)}&quot;. Rent is not charged for months that start after that day.</> : "Choose the last day in the room."}
+        {" "}Nothing else changes now. On the day they leave, use Move out to settle the deposit and close their record.
+      </Outcome>
+    </>
   );
 }
 
 export function WithdrawNotice({ tenancyId }: { tenancyId: string }) {
   return (
     <DialogForm
-      trigger="Withdraw" triggerClass={btn.link} title="Withdraw notice?" action={withdrawNoticeAction} submitLabel="Withdraw notice" fields={[]} hidden={{ tenancyId }}
+      trigger="Not leaving any more" triggerClass={btn.link} title="Is the tenant staying?" action={withdrawNoticeAction} submitLabel="Yes, they are staying" fields={[]} hidden={{ tenancyId }}
     >
-      {() => <p className="text-sm text-fg-2">The tenancy continues and monthly rent is charged again, including any months missed.</p>}
+      {() => (
+        <>
+          <p className="text-sm">Use this when the tenant has changed their mind and will stay.</p>
+          <Outcome>The leaving date is removed. Monthly rent is charged again, including any months that were skipped.</Outcome>
+        </>
+      )}
     </DialogForm>
   );
 }
@@ -306,7 +328,7 @@ export function EditTerms({ p, leaseEnd, notes }: { p: PaymentContext; leaseEnd?
       {(state) => (
         <>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Lease ends (optional)" name="leaseEnd" state={state}>
+            <Field label="Rent agreement ends (optional)" name="leaseEnd" state={state}>
               <Input type="date" name="leaseEnd" state={state} defaultValue={leaseEnd ?? ""} />
             </Field>
             <Field label="Days to pay" name="graceDays" state={state}>

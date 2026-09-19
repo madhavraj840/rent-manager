@@ -10,7 +10,7 @@ import { MetersCard } from "@/components/meters";
 import { Card, Chip, Crumbs, TenancyStatus, buttonClass, linkClass, longDate, money, paymentContext, shortDate } from "@/components/ui";
 import { AddCharge, AddCredit, ChangeRent, EditTenant, EditTerms, GiveNotice, RecordPayment, VoidEntry, WithdrawNotice } from "@/components/tenancy-actions";
 
-export const metadata: Metadata = { title: "Tenancy" };
+export const metadata: Metadata = { title: "Tenant" };
 
 const ordinal = (n: number) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th");
 const waLink = (phone: string | null | undefined, text: string) =>
@@ -42,7 +42,7 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
     ? `Hello ${primary?.fullName.split(" ")[0]}, your pending balance for ${v.unit.label} is ${money(b.balance, cur)}, including dues since ${oldest?.entry.description.replace("Rent · ", "")}.\nPlease let me know once paid. Thank you, ${signature}`
     : `Hello ${primary?.fullName.split(" ")[0]}, a gentle reminder that rent of ${money(Math.max(b.balance, 0), cur)} for ${v.unit.label}, ${v.property.name}${oldest ? ` for ${oldest.entry.description.replace("Rent · ", "")}` : ""} is due${oldest?.entry.dueDate ? ` on ${longDate(oldest.entry.dueDate)}` : ""}.\nThank you, ${signature}`;
 
-  const headline = tn.status === "CLOSED" ? "Closed" : b.balance > 0 ? `${money(b.balance, cur)} due` : b.balance < 0 ? `Advance ${money(b.advance, cur)}` : "All paid";
+  const headline = tn.status === "CLOSED" ? "Moved out" : b.balance > 0 ? `${money(b.balance, cur)} due` : b.balance < 0 ? `Advance ${money(b.advance, cur)}` : "All paid";
 
   return (
     <>
@@ -50,8 +50,8 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
 
       {tn.status === "ACTIVE" && tn.plannedMoveOutDate && (
         <div className="mb-4 flex flex-wrap items-center gap-x-2 rounded-md border border-due/40 bg-due-soft px-4 py-2.5 text-sm text-due">
-          <span className="font-medium">On notice · leaving {longDate(tn.plannedMoveOutDate)}</span>
-          <span>(given by the {tn.noticeGivenBy === "LANDLORD" ? "landlord" : "tenant"} on {longDate(tn.noticeGivenOn)})</span>
+          <span className="font-medium">Leaving on {longDate(tn.plannedMoveOutDate)}</span>
+          <span>· {tn.noticeGivenBy === "LANDLORD" ? `you asked ${primary?.fullName ?? "them"} to leave` : `${primary?.fullName ?? "the tenant"} told you`} on {longDate(tn.noticeGivenOn)}. Rent stops after that day.</span>
           <WithdrawNotice tenancyId={tn.id} />
         </div>
       )}
@@ -59,8 +59,8 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
       {tn.status !== "ACTIVE" && (
         <p className="mb-4 rounded-md border border-line bg-surface-2 px-4 py-2.5 text-sm">
           {tn.status === "CLOSED"
-            ? <>Closed · moved out on {longDate(tn.movedOutOn)}. This record is read-only.</>
-            : <>Moved out on {longDate(tn.movedOutOn)}. {b.balance > 0 ? `The tenant still owes ${money(b.balance, cur)}; record a payment or a write-off to close it.` : "Return the remaining deposit or advance to close it."}</>}
+            ? <>Moved out on {longDate(tn.movedOutOn)}. Everything is settled, so this record can no longer be changed.</>
+            : <>Moved out on {longDate(tn.movedOutOn)}. {b.balance > 0 ? `The tenant still owes ${money(b.balance, cur)}. Record a payment, or give a discount, to finish.` : "Return the deposit or advance you still hold to finish."}</>}
         </p>
       )}
 
@@ -93,11 +93,11 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
                 <dd className="text-right font-medium text-due">{money(b.depositDue, cur)}</dd>
               </>
             )}
-            <dt className="text-fg-2">Since</dt>
+            <dt className="text-fg-2">Moved in</dt>
             <dd className="text-right">{longDate(tn.startDate)}</dd>
             {tn.leaseEndDate && (
               <>
-                <dt className="text-fg-2">Lease ends</dt>
+                <dt className="text-fg-2">Agreement ends</dt>
                 <dd className={`text-right ${tn.leaseEndDate < ctx.today && tn.status === "ACTIVE" ? "font-medium text-due" : ""}`}>{longDate(tn.leaseEndDate)}</dd>
               </>
             )}
@@ -122,7 +122,7 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
               <ChangeRent p={pc} rent={v.rent} cycleDay={tn.cycleDay} nextStart={nextPeriodStart(periodStartFor(ctx.today, tn.cycleDay), tn.cycleDay)}
                 chargedStarts={v.rows.filter((r) => r.source === "AUTO" && r.status === "ACTIVE" && r.periodStart).map((r) => r.periodStart!)} />
             )}
-            {tn.status === "ACTIVE" && !tn.plannedMoveOutDate && <GiveNotice p={pc} leaseEnd={tn.leaseEndDate} />}
+            {tn.status === "ACTIVE" && !tn.plannedMoveOutDate && <GiveNotice p={pc} name={primary?.fullName ?? "the tenant"} startDate={tn.startDate} leaseEnd={tn.leaseEndDate} />}
             {tn.status === "ACTIVE" && <Link href={`/tenancies/${tn.id}/move-out`} className={`${buttonClass.ghost} sm:ml-auto`}>Move out</Link>}
           </div>
         )}
@@ -143,7 +143,7 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
                 <th className="px-4 py-2.5 font-medium max-sm:pr-0">Date</th>
                 <th className="px-4 py-2.5 font-medium">Description</th>
                 <th className="px-4 py-2.5 text-right font-medium">Amount</th>
-                <th className="px-4 py-2.5 text-right font-medium max-sm:hidden">Balance</th>
+                <th className="px-4 py-2.5 text-right font-medium max-sm:hidden">Owed after this</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -165,11 +165,11 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
                           : c.state === "PARTLY_PAID" ? <Chip tone="due">{money(c.remaining, cur)} left</Chip>
                           : <Chip tone="neutral">UNPAID</Chip>
                         )}
-                        {e.voided && <Chip tone="neutral">VOID</Chip>}
+                        {e.voided && <Chip tone="neutral">CANCELLED</Chip>}
                         {row.possibleDuplicateOf && !e.voided && <Chip tone="due">POSSIBLE DUPLICATE</Chip>}
                       </div>
                       <div className="flex flex-wrap items-center gap-x-1 text-[13px] text-fg-2">
-                        {[e.method && label(METHODS, e.method), e.receiptNo, row.reference, e.voided && row.voidReason && `Void: ${row.voidReason}`, e.kind === "CHARGE" && e.dueDate && !e.voided && `due ${shortDate(e.dueDate)}`]
+                        {[e.method && label(METHODS, e.method), e.receiptNo, row.reference, e.voided && row.voidReason && `Cancelled: ${row.voidReason}`, e.kind === "CHARGE" && e.dueDate && !e.voided && `due ${shortDate(e.dueDate)}`]
                           .filter(Boolean).join(" · ")}
                         {e.receiptNo && (
                           <Link href={`/print/receipt/${e.id}`} target="_blank" className="rounded px-1.5 py-0.5 font-medium underline-offset-2 hover:bg-surface-2 hover:text-fg hover:underline">Receipt</Link>
@@ -184,13 +184,13 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
                       {plus ? money(e.amount, cur) : `−${money(e.amount, cur)}`}
                     </td>
                     <td className="num whitespace-nowrap px-4 py-3 text-right align-top font-medium max-sm:hidden">
-                      {running < 0 ? `Adv ${money(-running, cur)}` : money(running, cur)}
+                      {running < 0 ? `Advance ${money(-running, cur)}` : money(running, cur)}
                     </td>
                   </tr>
                 );
               })}
               {!history.length && (
-                <tr><td colSpan={4} className="px-4 py-10 text-center text-fg-2">No entries yet.</td></tr>
+                <tr><td colSpan={4} className="px-4 py-10 text-center text-fg-2">No payments or charges yet. Use Record payment above to add the first one.</td></tr>
               )}
             </tbody>
           </table>
@@ -219,9 +219,9 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
         <Card title="Terms" action={tn.status === "ACTIVE" ? <EditTerms p={pc} leaseEnd={tn.leaseEndDate} notes={tn.notes} /> : undefined}>
           <dl className="num grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 px-4 py-3 text-sm">
             <dt className="text-fg-2">Moved in</dt><dd>{longDate(tn.startDate)}</dd>
-            {tn.billingStartDate !== tn.startDate && <><dt className="text-fg-2">Billing from</dt><dd>{longDate(tn.billingStartDate)}</dd></>}
+            {tn.billingStartDate !== tn.startDate && <><dt className="text-fg-2">Rent charged from</dt><dd>{longDate(tn.billingStartDate)}</dd></>}
             <dt className="text-fg-2">Rent day</dt><dd>{ordinal(tn.cycleDay)} of each month, {tn.graceDays} days to pay</dd>
-            <dt className="text-fg-2">Lease ends</dt><dd>{tn.leaseEndDate ? longDate(tn.leaseEndDate) : "Not set"}</dd>
+            <dt className="text-fg-2">Agreement ends</dt><dd>{tn.leaseEndDate ? longDate(tn.leaseEndDate) : "Not set"}</dd>
             <dt className="text-fg-2">Deposit agreed</dt><dd>{money(tn.depositAgreedMinor, cur)}</dd>
             <dt className="text-fg-2">Rent history</dt>
             <dd>
@@ -236,7 +236,7 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
 
       <div className="mt-6">
         <DocumentsCard docs={docs} readOnly={tn.status === "CLOSED"}
-          target={{ entityType: "TENANCY", entityId: tn.id, where: "this tenancy", person: primary && { id: primary.id, name: primary.fullName } }}
+          target={{ entityType: "TENANCY", entityId: tn.id, where: `${primary?.fullName ?? "this tenant"}'s record for ${v.unit.label}`, person: primary && { id: primary.id, name: primary.fullName } }}
           owners={Object.fromEntries(v.people.map((p) => [p.id, p.fullName]))} />
       </div>
 
@@ -254,7 +254,7 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
                 <span>
                   <span className={r.status === "VOID" ? "line-through" : ""}>{r.description}</span>
                   <span className="block text-[13px] text-fg-2">
-                    {[longDate(r.entryDate), label(METHODS, r.method), r.receiptNumber, r.status === "VOID" && "VOID"].filter(Boolean).join(" · ")}
+                    {[longDate(r.entryDate), label(METHODS, r.method), r.receiptNumber, r.status === "VOID" && "CANCELLED"].filter(Boolean).join(" · ")}
                     {open && r.status === "ACTIVE" && r.kind === "PAYMENT" && r.method !== "OPENING_BALANCE" && !r.settlementId && (
                       <> <VoidEntry entryId={r.id} summary={`${r.description} · ${money(r.amountMinor, cur)}`} receipt={r.receiptNumber ?? undefined} /></>
                     )}

@@ -97,8 +97,8 @@ export function SettlementForm({ tenancyId, moveOut, today, currency, locale, ba
       )}
 
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <p className="text-[13px] text-fg-2">Finalizing ends the tenancy and records these lines. It can&apos;t be edited afterwards.</p>
-        <Submit pending={pending}>Finalize move-out</Submit>
+        <p className="text-[13px] text-fg-2">Finishing saves this final bill and marks the tenant as moved out. It can&apos;t be changed afterwards.</p>
+        <Submit pending={pending}>Finish move-out</Submit>
       </div>
     </form>
   );
