@@ -236,3 +236,35 @@ export function parseMoney(text: string, currency: string): number | null {
   if (frac.length > digits) return null;
   return Number(whole) * 10 ** digits + Number(frac.padEnd(digits, "0") || 0);
 }
+
+// ---- Utility charges (10 §11) ----
+
+/** Parse a decimal string into an integer scaled by 10^scale ("4951.5", 3 → 4951500); null if invalid or too precise. */
+export function parseScaled(text: string, scale: number): number | null {
+  const clean = text.replace(/[,\s]/g, "");
+  if (!/^\d{1,11}(\.\d+)?$/.test(clean)) return null;
+  const [whole, frac = ""] = clean.split(".");
+  if (frac.length > scale) return null;
+  return Number(whole) * 10 ** scale + Number(frac.padEnd(scale, "0") || 0);
+}
+
+/** Integer scaled by 10^scale back to a trimmed decimal string (4951500, 3 → "4951.5"). */
+export const formatScaled = (n: number, scale: number) =>
+  (n / 10 ** scale).toFixed(scale).replace(/\.?0+$/, "");
+
+/**
+ * round_money(consumption × rate × 10^exponent) + fixed (10 §11.2), in integers:
+ * consumption in thousandths, rate in ten-thousandths of a major unit.
+ */
+export function utilityAmount(consumptionMilli: number, rateE4: number, fixedMinor: number, currency: string, unit: number) {
+  const n = BigInt(consumptionMilli) * BigInt(rateE4) * 10n ** BigInt(currencyDigits(currency));
+  const d = 10n ** 7n * BigInt(unit);
+  return Number(((2n * n + d) / (2n * d)) * BigInt(unit)) + fixedMinor;
+}
+
+/** "Electricity 18 Aug – 18 Sep 2026: 219.5 kWh × ₹9.50" with fixed English month names. */
+export function utilityDescription(type: string, from: string, to: string, consumptionMilli: number, uom: string, rate: string) {
+  const name = { ELECTRICITY: "Electricity", WATER: "Water", GAS: "Gas" }[type] ?? "Utility";
+  const u = { KWH: "kWh", M3: "m³", LITRE: "L", UNIT: "units" }[uom] ?? uom;
+  return `${name} ${DAYMON(from)} – ${DAYMON(to)} ${to.slice(0, 4)}: ${formatScaled(consumptionMilli, 3)} ${u} × ${rate}`;
+}

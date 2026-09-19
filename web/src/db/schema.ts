@@ -1,7 +1,7 @@
 // Subset of docs/05_DATABASE_DESIGN.md needed for the web MVP so far.
 // Constraints Drizzle can't express (triggers, exclusion constraint, CHECKs) live in db/migrations/*_rules.sql.
 import { sql } from "drizzle-orm";
-import { bigint, boolean, date, jsonb, pgSchema, smallint, text, timestamp, uniqueIndex, uuid, index } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, jsonb, numeric, pgSchema, smallint, text, timestamp, uniqueIndex, uuid, index } from "drizzle-orm/pg-core";
 
 export const app = pgSchema("app");
 
@@ -207,6 +207,12 @@ export const ledgerEntries = app.table("ledger_entries", {
   receiptNumber: text("receipt_number"),
   source: text("source").notNull().default("MANUAL"),
   generatedKey: text("generated_key"),
+  // Utility charge snapshot (10 §11): readings used, consumption and rate at billing time.
+  meterReadingId: uuid("meter_reading_id"),
+  previousReadingId: uuid("previous_reading_id"),
+  quantity: numeric("quantity", { precision: 14, scale: 3 }),
+  rate: numeric("rate", { precision: 12, scale: 4 }),
+  fixedAmountMinor: money("fixed_amount_minor"),
   settlementId: uuid("settlement_id").references(() => settlements.id),
   relatedEntryId: uuid("related_entry_id"),
   status: text("status").notNull().default("ACTIVE"),
@@ -220,6 +226,43 @@ export const ledgerEntries = app.table("ledger_entries", {
   index("ledger_reports_ix").on(t.workspaceId, t.kind, t.entryDate),
   uniqueIndex("ledger_receipt_uq").on(t.workspaceId, t.receiptNumber).where(sql`${t.receiptNumber} is not null`),
   uniqueIndex("ledger_generated_uq").on(t.generatedKey).where(sql`${t.generatedKey} is not null`),
+]);
+
+export const meters = app.table("meters", {
+  id: id(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  propertyId: uuid("property_id").notNull().references(() => properties.id),
+  unitId: uuid("unit_id").references(() => units.id), // null = common meter
+  type: text("type").notNull(),
+  label: text("label").notNull(),
+  serialNumber: text("serial_number"),
+  uom: text("uom").notNull(),
+  rate: numeric("rate", { precision: 12, scale: 4 }).notNull().default("0"), // major units per uom
+  fixedChargeMinor: money("fixed_charge_minor").notNull().default(0),
+  currency: text("currency").notNull(),
+  notes: text("notes"),
+  archivedAt: ts("archived_at"),
+  ...sync(),
+}, (t) => [
+  uniqueIndex("meters_label_uq").on(t.propertyId, sql`coalesce(${t.unitId}, '00000000-0000-0000-0000-000000000000'::uuid)`, sql`lower(${t.label})`).where(sql`${t.deletedAt} is null`),
+]);
+
+export const meterReadings = app.table("meter_readings", {
+  id: id(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  propertyId: uuid("property_id").notNull().references(() => properties.id),
+  meterId: uuid("meter_id").notNull().references(() => meters.id),
+  tenancyId: uuid("tenancy_id").references(() => tenancies.id),
+  readingDate: day("reading_date").notNull(),
+  value: numeric("value", { precision: 14, scale: 3 }).notNull(),
+  readingType: text("reading_type").notNull().default("REGULAR"),
+  note: text("note"),
+  status: text("status").notNull().default("ACTIVE"),
+  voidReason: text("void_reason"),
+  ...sync(),
+}, (t) => [
+  uniqueIndex("readings_uq").on(t.meterId, t.readingDate, t.readingType).where(sql`${t.status} = 'ACTIVE'`),
+  index("readings_meter_date_ix").on(t.meterId, t.readingDate),
 ]);
 
 export const expenses = app.table("expenses", {
@@ -262,3 +305,5 @@ export type Tenant = typeof tenants.$inferSelect;
 export type Tenancy = typeof tenancies.$inferSelect;
 export type LedgerRow = typeof ledgerEntries.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
+export type Meter = typeof meters.$inferSelect;
+export type MeterReading = typeof meterReadings.$inferSelect;

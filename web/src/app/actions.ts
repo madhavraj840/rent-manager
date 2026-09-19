@@ -5,14 +5,14 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, t } from "@/db";
-import { parseMoney } from "@/lib/money";
+import { formatMoney, parseMoney, parseScaled } from "@/lib/money";
 import { unitLabels } from "@/lib/units";
 import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, EXPENSE_CATEGORIES, PAY_METHODS, PROPERTY_TYPES as PT, UNIT_TYPES as UT } from "@/lib/labels";
 import * as cmd from "@/server/commands";
 import { requireCtx } from "@/server/queries";
 import { seedSample } from "@/server/sample";
 
-export type FormState = { error?: string; field?: string; ok?: string; at?: number } | undefined;
+export type FormState = { error?: string; field?: string; ok?: string; at?: number; rows?: Record<string, string> } | undefined;
 
 // Trust boundary: every action validates with Zod, then calls a command (commands re-check business rules).
 
@@ -417,5 +417,111 @@ export async function voidExpenseAction(_: FormState, fd: FormData): Promise<For
     await cmd.voidExpense(ctx, f.id, str(200).min(1, "Enter a reason").parse(f.reason));
     revalidatePath("/", "layout");
     return { ok: "Expense voided", at: Date.now() };
+  });
+}
+
+// ---------- Meters and readings (SCR-60…63) ----------
+
+const METER_TYPES = ["ELECTRICITY", "WATER", "GAS", "OTHER"] as const;
+const UOMS = ["KWH", "M3", "LITRE", "UNIT"] as const;
+
+function reading(value: string | undefined, field: string) {
+  if (!value?.trim()) throw new FieldError(field, "Enter the reading");
+  const v = parseScaled(value, 3);
+  if (v === null) throw new FieldError(field, "Enter a number with up to 3 decimals");
+  return v;
+}
+
+export async function saveMeterAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const db = await getDb();
+    const [p] = await db.select({ currency: t.properties.currency }).from(t.properties).where(eq(t.properties.id, f.propertyId ?? ""));
+    if (!p) throw new FieldError("", "Property not found");
+    const rateE4 = parseScaled(f.rate ?? "", 4);
+    if (rateE4 === null) throw new FieldError("rate", "Enter a rate with up to 4 decimals");
+    if (rateE4 > 1_000_000 * 10_000) throw new FieldError("rate", "Rate is too high");
+    const input: cmd.MeterInput = {
+      propertyId: f.propertyId,
+      unitId: f.unitId || undefined,
+      type: z.enum(METER_TYPES, "Choose a type").parse(f.type),
+      label: str(40).min(1, "Enter a name").parse(f.label),
+      serialNumber: opt(60).parse(f.serialNumber),
+      uom: z.enum(UOMS, "Choose a unit of measure").parse(f.uom),
+      rateE4,
+      fixedChargeMinor: money(f.fixed, p.currency, "fixed"),
+    };
+    if (f.id) await cmd.updateMeter(ctx, f.id, input);
+    else await cmd.addMeter(ctx, input);
+    revalidatePath("/", "layout");
+    return { ok: f.id ? "Meter saved" : "Meter added", at: Date.now() };
+  });
+}
+
+const billMessage = (r: Awaited<ReturnType<typeof cmd.recordReading>>) =>
+  r.charged ? `Reading saved · ${formatMoney(r.charged, r.currency)} added to the tenant's balance`
+  : r.baseline ? "Saved as the starting reading for this tenant. The next reading will be billed."
+  : r.vacant ? "Reading saved (no tenant to bill)" : "Reading saved";
+
+export async function recordReadingAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const db = await getDb();
+    const [m] = await db.select({ currency: t.meters.currency }).from(t.meters).where(eq(t.meters.id, f.meterId ?? ""));
+    if (!m) throw new FieldError("", "Meter not found");
+    const replaced = f.replaced === "on" ? { oldFinalMilli: reading(f.oldFinal, "oldFinal"), newStartMilli: reading(f.newStart || "0", "newStart") } : undefined;
+    const r = await cmd.recordReading(ctx, {
+      meterId: f.meterId,
+      date: date(f.date, "date"),
+      valueMilli: reading(f.value, "value"),
+      replaced,
+      bill: f.bill === "on",
+      amountMinor: f.bill === "on" && f.amount?.trim() ? money(f.amount, m.currency, "amount", { positive: true }) : undefined,
+      dueDate: f.bill === "on" && f.dueDate ? date(f.dueDate, "dueDate") : undefined,
+      note: opt(200).parse(f.note),
+    });
+    revalidatePath("/", "layout");
+    return { ok: billMessage(r), at: Date.now() };
+  });
+}
+
+export async function voidReadingAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    await cmd.voidReading(ctx, f.id, str(200).min(1, "Enter a reason").parse(f.reason));
+    revalidatePath("/", "layout");
+    return { ok: "Reading voided", at: Date.now() };
+  });
+}
+
+/** F-UTIL-3: each meter is saved on its own, so one bad row doesn't block the rest. */
+export async function readingsRoundAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const day = date(f.date, "date");
+    const rows: Record<string, string> = {};
+    let saved = 0, charges = 0;
+    const totals = new Map<string, number>();
+    for (const [k, v] of Object.entries(f)) {
+      if (!k.startsWith("v_") || !v.trim()) continue;
+      const meterId = k.slice(2);
+      try {
+        const r = await cmd.recordReading(ctx, { meterId, date: day, valueMilli: reading(v, k), bill: true });
+        saved++;
+        if (r.charged) { charges++; totals.set(r.currency, (totals.get(r.currency) ?? 0) + r.charged); }
+      } catch (e) {
+        if (e instanceof cmd.DomainError || e instanceof FieldError) rows[meterId] = e.message;
+        else throw e;
+      }
+    }
+    if (saved) revalidatePath("/", "layout");
+    if (!saved && !Object.keys(rows).length) throw new FieldError("", "Enter at least one reading");
+    const amount = [...totals].map(([c, n]) => formatMoney(n, c)).join(" + ");
+    const ok = saved ? `${saved} ${saved === 1 ? "reading" : "readings"} saved, ${charges} ${charges === 1 ? "charge" : "charges"} created${amount ? ` (${amount})` : ""}` : undefined;
+    return { ok, rows, error: Object.keys(rows).length ? `${Object.keys(rows).length} could not be saved. Check the highlighted rows.` : undefined, at: Date.now() };
   });
 }

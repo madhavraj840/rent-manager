@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { expensesIn, loadPortfolio, monthSummary } from "@/server/queries";
+import { expensesIn, loadPortfolio, meterViews, monthSummary } from "@/server/queries";
+import { MetersCard } from "@/components/meters";
 import { PROPERTY_TYPES, UNIT_TYPES, label } from "@/lib/labels";
 import { Card, Chip, Empty, PageHeader, TenancyStatus, buttonClass, money, shortDate } from "@/components/ui";
 
@@ -85,6 +86,10 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
           </ul>
         )}
       </Card>
+
+      <div className="mt-6">
+        <MetersCard list={meterViews(portfolio, { propertyId: p.id })} ctx={ctx} property={p} units={pu} roundHref={`/properties/${p.id}/readings`} />
+      </div>
 
       {past.length > 0 && (
         <Card title="Past tenancies" className="mt-6">

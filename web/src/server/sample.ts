@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
 import { getDb, t } from "@/db";
-import { addDays, currencyDigits } from "@/lib/money";
+import { currencyDigits } from "@/lib/money";
 import { unitLabels } from "@/lib/units";
 import * as cmd from "./commands";
 
@@ -59,8 +59,6 @@ export async function seedSample(ctx: cmd.Ctx) {
       const d = m(off, day);
       if (d <= ctx.today) await cmd.recordPayment(ctx, { tenancyId: id, rentMinor: r(amount), depositMinor: 0, date: d, method });
     }
-    if (p.unit === "Flat 103")
-      await cmd.addCharge(ctx, { tenancyId: id, category: "UTILITY", description: "Electricity 219.5 kWh × 9.50", amountMinor: r(2085), date: m(0, 2) <= ctx.today ? m(0, 2) : ctx.today, dueDate: addDays(m(0, 2), 5) });
   }
 
   // A tenant who lived there before the app: opening balance and deposit already held (SCR-41).
@@ -69,6 +67,17 @@ export async function seedSample(ctx: cmd.Ctx) {
     existing: true, billingStart: m(-1), cycleDay: 1, graceDays: 5, rentMinor: r(18000), depositMinor: r(50000), depositHeldMinor: r(50000),
     openingOwedMinor: r(9000), openingAdvanceMinor: 0,
   });
+
+  // Electricity meters: last month's reading is each tenant's starting point, this month's is billed at ₹9.50/kWh.
+  const flats = units.filter((u) => u.propertyId === green);
+  for (const [i, u] of flats.entries()) {
+    const meterId = await cmd.addMeter(ctx, { propertyId: green, unitId: u.id, type: "ELECTRICITY", label: "Main meter", uom: "KWH", rateE4: 95000, fixedChargeMinor: 0 });
+    const start = 4732000 + i * 611500; // thousandths of a kWh
+    await cmd.recordReading(ctx, { meterId, date: m(-1, 1), valueMilli: start, bill: true });
+    if (m(0, 1) <= ctx.today) await cmd.recordReading(ctx, { meterId, date: m(0, 1), valueMilli: start + 219500 + i * 23000, bill: true });
+  }
+  const common = await cmd.addMeter(ctx, { propertyId: pg, type: "ELECTRICITY", label: "Common area", uom: "KWH", rateE4: 95000, fixedChargeMinor: 0 });
+  await cmd.recordReading(ctx, { meterId: common, date: m(-1, 1), valueMilli: 12040000, bill: false });
 
   // Running costs, so the dashboard shows net income.
   const costs: [string | undefined, string, number, string, number, number][] = [

@@ -1,7 +1,7 @@
 // Examples from docs/10_FINANCIAL_RULES.md §3.4. Run: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allocate, formatMoney, type LedgerEntry } from "./money.ts";
+import { allocate, formatMoney, formatScaled, parseScaled, roundingUnit, utilityAmount, type LedgerEntry } from "./money.ts";
 
 const rent = (id: string, due: string, amount = 1_500_000): LedgerEntry => ({
   id, tenancyId: "t", account: "RENT", kind: "CHARGE", category: "RENT",
@@ -92,4 +92,17 @@ test("parseMoney", () => {
   assert.equal(parseMoney("12.345", "USD"), null);
   assert.equal(parseMoney("1000", "JPY"), 1000);
   assert.equal(parseMoney("-5", "INR"), null);
+});
+
+test("FIN-TEST-012 utility amounts", () => {
+  const inr = roundingUnit("INR", true);
+  const c = (a: string, b: string) => parseScaled(b, 3)! - parseScaled(a, 3)!;
+  assert.equal(utilityAmount(c("4732.0", "4951.5"), parseScaled("9.50", 4)!, 0, "INR", inr), 208500); // 2,085.25 → ₹2,085
+  // Replacement: (8,850 − 8,700) + (60 − 0) = 210 × 9.50 = 1,995
+  assert.equal(utilityAmount(c("8700", "8850") + c("0", "60"), 95000, 0, "INR", inr), 199500);
+  assert.equal(utilityAmount(0, 95000, 5000, "INR", inr), 5000); // consumption 0, fixed ₹50
+  assert.equal(utilityAmount(1234, 12345, 0, "USD", 1), 152); // 1.234 × 1.2345 = 1.5234 → $1.52 in cents
+  assert.equal(parseScaled("1.2345", 4), 12345);
+  assert.equal(parseScaled("1.23456", 4), null);
+  assert.equal(formatScaled(4951500, 3), "4951.5");
 });

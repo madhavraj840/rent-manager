@@ -2,7 +2,8 @@ import "server-only";
 import { and, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { getDb, t, type DB } from "@/db";
 import {
-  addDays, allocate, formatMoney, moveOutCredit, nextPeriodStart, periodStartFor, rentSchedule, roundingUnit, type LedgerEntry,
+  addDays, allocate, formatMoney, formatScaled, moveOutCredit, nextPeriodStart, parseScaled, periodStartFor, rentSchedule, roundingUnit,
+  utilityAmount, utilityDescription, type LedgerEntry,
 } from "@/lib/money";
 import { CREDIT_CATEGORIES } from "@/lib/labels";
 
@@ -204,9 +205,12 @@ async function generateRent(tx: Tx, ctx: Ctx, tn: typeof t.tenancies.$inferSelec
  * ponytail: runs on page load; becomes the hourly cron job (06 §9) when deployed.
  */
 export async function generateDueCharges(ctx: Ctx) {
+  // Rent only falls due when the date changes; tenancy commands generate their own charges.
+  const done = ((globalThis as { __rentChecked?: Map<string, string> }).__rentChecked ??= new Map());
+  if (done.get(ctx.workspace.id) === ctx.today) return;
   const db = await getDb();
   const active = await db.select().from(t.tenancies).where(and(eq(t.tenancies.workspaceId, ctx.workspace.id), eq(t.tenancies.status, "ACTIVE"), isNull(t.tenancies.deletedAt)));
-  if (!active.length) return;
+  if (!active.length) return void done.set(ctx.workspace.id, ctx.today);
   const keys = new Set(
     (await db.select({ k: t.ledgerEntries.generatedKey }).from(t.ledgerEntries)
       .where(and(eq(t.ledgerEntries.workspaceId, ctx.workspace.id), eq(t.ledgerEntries.source, "AUTO")))).map((r) => r.k),
@@ -218,12 +222,15 @@ export async function generateDueCharges(ctx: Ctx) {
     for (; s <= limit; s = nextPeriodStart(periodStartFor(s, tn.cycleDay), tn.cycleDay)) if (!keys.has(`rent:${tn.id}:${s}`)) return true;
     return false;
   });
-  if (!due.length) return;
-  await run({ ...ctx, userId: "" }, "rent.generate", "workspace", async (tx) => {
-    let n = 0;
-    for (const tn of due) n += await generateRent(tx, ctx, tn, ctx.today);
-    return { entityId: ctx.workspace.id, changes: { charges: n }, result: n };
-  }).catch(() => undefined); // a concurrent request may have generated them already
+  if (due.length) {
+    const ok = await run({ ...ctx, userId: "" }, "rent.generate", "workspace", async (tx) => {
+      let n = 0;
+      for (const tn of due) n += await generateRent(tx, ctx, tn, ctx.today);
+      return { entityId: ctx.workspace.id, changes: { charges: n }, result: true };
+    }).catch(() => false); // a concurrent request may have generated them already; retry next load
+    if (!ok) return;
+  }
+  done.set(ctx.workspace.id, ctx.today);
 }
 
 // ---------- Tenancies ----------
@@ -612,5 +619,147 @@ export function voidExpense(ctx: Ctx, id: string, reason: string) {
     if (e.status === "VOID") throw new DomainError("ALREADY_VOID", "This expense is already void.");
     await tx.update(t.expenses).set({ status: "VOID", voidReason: reason, updatedBy: ctx.userId }).where(eq(t.expenses.id, id));
     return { entityId: id, changes: { reason, amount: e.amountMinor }, result: id };
+  });
+}
+
+// ---------- Meters and readings (F-UTIL-1…3, 10 §11) ----------
+
+export interface MeterInput {
+  propertyId: string; unitId?: string; type: string; label: string; serialNumber?: string; uom: string;
+  rateE4: number; fixedChargeMinor: number; notes?: string;
+}
+
+async function meterScope(tx: Tx, ctx: Ctx, input: MeterInput, exceptId?: string) {
+  const [p] = await tx.select().from(t.properties).where(and(eq(t.properties.id, input.propertyId), eq(t.properties.workspaceId, ctx.workspace.id)));
+  if (!p) throw new DomainError("NOT_FOUND", "Property not found.");
+  if (input.unitId) {
+    const [u] = await tx.select({ id: t.units.id }).from(t.units).where(and(eq(t.units.id, input.unitId), eq(t.units.propertyId, p.id)));
+    if (!u) throw new DomainError("VALIDATION", "That unit is not in this property.", "unitId");
+  }
+  const same = await tx.select({ id: t.meters.id, unitId: t.meters.unitId, label: t.meters.label }).from(t.meters)
+    .where(and(eq(t.meters.propertyId, p.id), isNull(t.meters.deletedAt)));
+  if (same.some((m) => m.id !== exceptId && (m.unitId ?? "") === (input.unitId ?? "") && m.label.toLowerCase() === input.label.toLowerCase()))
+    throw new DomainError("DUPLICATE_LABEL", `There is already a meter called "${input.label}" here.`, "label");
+  return p;
+}
+
+const meterRow = (input: MeterInput) => ({
+  unitId: input.unitId ?? null, type: input.type, label: input.label, serialNumber: input.serialNumber ?? null, uom: input.uom,
+  rate: formatScaled(input.rateE4, 4), fixedChargeMinor: input.fixedChargeMinor, notes: input.notes ?? null,
+});
+
+export function addMeter(ctx: Ctx, input: MeterInput) {
+  return run(ctx, "meter.create", "meter", async (tx) => {
+    const p = await meterScope(tx, ctx, input);
+    const [m] = await tx.insert(t.meters).values({ ...meterRow(input), propertyId: p.id, currency: p.currency, workspaceId: ctx.workspace.id, createdBy: ctx.userId }).returning();
+    return { entityId: m.id, changes: input, result: m.id };
+  });
+}
+
+/** Rate changes apply to bills created from now on; past charges keep their snapshot. */
+export function updateMeter(ctx: Ctx, id: string, input: MeterInput) {
+  return run(ctx, "meter.update", "meter", async (tx) => {
+    const [before] = await tx.select().from(t.meters).where(and(eq(t.meters.id, id), eq(t.meters.workspaceId, ctx.workspace.id)));
+    if (!before) throw new DomainError("NOT_FOUND", "Meter not found.");
+    await meterScope(tx, ctx, { ...input, propertyId: before.propertyId }, id);
+    await tx.update(t.meters).set({ ...meterRow(input), updatedBy: ctx.userId }).where(eq(t.meters.id, id));
+    return { entityId: id, changes: { before, after: input }, result: id };
+  });
+}
+
+/** "₹9.50" style rate label, up to 4 decimals. */
+export const rateLabel = (rate: string, currency: string) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(Number(rate));
+
+export interface ReadingInput {
+  meterId: string; date: string; valueMilli: number;
+  replaced?: { oldFinalMilli: number; newStartMilli: number };
+  bill: boolean; amountMinor?: number; dueDate?: string; note?: string;
+}
+
+const milli = (v: string) => parseScaled(v, 3)!;
+const TYPE_ORDER: Record<string, number> = { METER_END: 0, METER_START: 1, MOVE_IN: 2, REGULAR: 3, MOVE_OUT: 4 };
+type Reading = typeof t.meterReadings.$inferSelect;
+const byTime = (a: Reading, b: Reading) => a.readingDate.localeCompare(b.readingDate) || TYPE_ORDER[a.readingType] - TYPE_ORDER[b.readingType];
+
+/**
+ * Save a reading and, when billable, its utility charge in one transaction (F-UTIL-2).
+ * The first reading inside a tenancy is its starting (MOVE_IN) reading and is never billed.
+ */
+export function recordReading(ctx: Ctx, input: ReadingInput) {
+  return run(ctx, "reading.record", "meter", async (tx) => {
+    const [m] = await tx.select().from(t.meters).where(and(eq(t.meters.id, input.meterId), eq(t.meters.workspaceId, ctx.workspace.id)));
+    if (!m || m.archivedAt) throw new DomainError("NOT_FOUND", "Meter not found.");
+    if (input.date > ctx.today) throw new DomainError("VALIDATION", "The reading date can't be in the future.", "date");
+
+    const readings = (await tx.select().from(t.meterReadings).where(and(eq(t.meterReadings.meterId, m.id), eq(t.meterReadings.status, "ACTIVE")))).sort(byTime);
+    const last = readings.at(-1);
+    if (last && input.date < last.readingDate) throw new DomainError("VALIDATION", `The last reading is from ${last.readingDate}. Pick that date or later.`, "date");
+    if (last && input.date === last.readingDate) throw new DomainError("READING_DUPLICATE", "This meter already has a reading on that date.", "date");
+    const lastMilli = last ? milli(last.value) : 0;
+    if (input.replaced) {
+      if (last && input.replaced.oldFinalMilli < lastMilli) throw new DomainError("VALIDATION", `The old meter's final reading can't be below ${formatScaled(lastMilli, 3)}.`, "oldFinal");
+      if (input.valueMilli < input.replaced.newStartMilli) throw new DomainError("VALIDATION", "The reading can't be below the new meter's starting value.", "value");
+    } else if (last && input.valueMilli < lastMilli) {
+      throw new DomainError("VALIDATION", `The reading can't be lower than the last one (${formatScaled(lastMilli, 3)}). If the meter was replaced, tick "Meter replaced".`, "value");
+    }
+
+    const [tn] = m.unitId
+      ? (await tx.select().from(t.tenancies).where(and(eq(t.tenancies.unitId, m.unitId), eq(t.tenancies.status, "ACTIVE"), isNull(t.tenancies.deletedAt))))
+        .filter((x) => x.startDate <= input.date)
+      : [];
+    const prev = tn ? readings.filter((r) => r.tenancyId === tn.id).at(-1) : undefined;
+
+    const base = { workspaceId: ctx.workspace.id, propertyId: m.propertyId, meterId: m.id, readingDate: input.date, tenancyId: tn?.id ?? null, createdBy: ctx.userId };
+    if (input.replaced)
+      await tx.insert(t.meterReadings).values([
+        { ...base, readingType: "METER_END", value: formatScaled(input.replaced.oldFinalMilli, 3) },
+        { ...base, readingType: "METER_START", value: formatScaled(input.replaced.newStartMilli, 3) },
+      ]);
+    const [reading] = await tx.insert(t.meterReadings).values({
+      ...base, readingType: tn && !prev ? "MOVE_IN" : "REGULAR", value: formatScaled(input.valueMilli, 3), note: input.note ?? null,
+    }).returning();
+
+    let charged = 0;
+    if (tn && prev && input.bill) {
+      const consumption = input.replaced
+        ? input.replaced.oldFinalMilli - milli(prev.value) + (input.valueMilli - input.replaced.newStartMilli)
+        : input.valueMilli - milli(prev.value);
+      const amount = input.amountMinor
+        ?? utilityAmount(consumption, parseScaled(m.rate, 4)!, m.fixedChargeMinor, m.currency, roundingUnit(m.currency, ctx.workspace.roundToWholeUnits));
+      if (amount > 0) {
+        const dueDate = input.dueDate ?? addDays(input.date, tn.graceDays);
+        if (dueDate < input.date) throw new DomainError("VALIDATION", "Due date can't be before the reading date.", "dueDate");
+        await tx.insert(t.ledgerEntries).values(entry(ctx, tn, {
+          kind: "CHARGE", account: "RENT", category: "UTILITY", amountMinor: amount, entryDate: input.date, dueDate,
+          description: utilityDescription(m.type, prev.readingDate, input.date, consumption, m.uom, rateLabel(m.rate, m.currency)),
+          meterReadingId: reading.id, previousReadingId: prev.id, quantity: formatScaled(consumption, 3), rate: m.rate,
+          fixedAmountMinor: m.fixedChargeMinor || null,
+        }));
+        charged = amount;
+      }
+    }
+    return {
+      entityId: m.id, changes: { ...input, reading: reading.id, charged },
+      result: { charged, baseline: !!tn && !prev, tenancyId: tn?.id, currency: m.currency, vacant: !tn },
+    };
+  });
+}
+
+/** Only the latest reading can be voided (later consumption depends on it); its charge is voided with it. */
+export function voidReading(ctx: Ctx, readingId: string, reason: string) {
+  return run(ctx, "reading.void", "meter", async (tx) => {
+    const [r] = await tx.select().from(t.meterReadings).where(and(eq(t.meterReadings.id, readingId), eq(t.meterReadings.workspaceId, ctx.workspace.id)));
+    if (!r || r.status === "VOID") throw new DomainError("NOT_FOUND", "Reading not found.");
+    const readings = (await tx.select().from(t.meterReadings).where(and(eq(t.meterReadings.meterId, r.meterId), eq(t.meterReadings.status, "ACTIVE")))).sort(byTime);
+    if (readings.at(-1)!.id !== r.id) throw new DomainError("NOT_LATEST", "Only the latest reading can be voided. Void the later ones first.");
+    const group = readings.filter((x) => x.readingDate === r.readingDate); // includes a same-day meter replacement
+    const [charge] = await tx.select().from(t.ledgerEntries).where(and(eq(t.ledgerEntries.meterReadingId, r.id), eq(t.ledgerEntries.status, "ACTIVE")));
+    if (charge?.settlementId) throw new DomainError("ENTRY_IN_SETTLEMENT", "This reading was billed in a move-out settlement and can't be voided.");
+    await tx.update(t.meterReadings).set({ status: "VOID", voidReason: reason, updatedBy: ctx.userId }).where(inArray(t.meterReadings.id, group.map((x) => x.id)));
+    if (charge)
+      await tx.update(t.ledgerEntries).set({ status: "VOID", voidReason: `Reading voided: ${reason}`, voidedAt: sql`now()`, voidedBy: ctx.userId, updatedBy: ctx.userId })
+        .where(eq(t.ledgerEntries.id, charge.id));
+    return { entityId: r.meterId, changes: { reading: r.id, reason, charge: charge?.id }, result: r.meterId };
   });
 }

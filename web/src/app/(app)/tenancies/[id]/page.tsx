@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { FileText, MessageCircle, Phone } from "lucide-react";
 import { nextPeriodStart, periodStartFor, runningBalances } from "@/lib/money";
 import { METHODS, label } from "@/lib/labels";
-import { loadPortfolio } from "@/server/queries";
+import { loadPortfolio, meterViews } from "@/server/queries";
+import { MetersCard } from "@/components/meters";
 import { Card, Chip, TenancyStatus, buttonClass, longDate, money, paymentContext, shortDate } from "@/components/ui";
 import { AddCharge, AddCredit, ChangeRent, EditTenant, EditTerms, GiveNotice, RecordPayment, VoidEntry, WithdrawNotice } from "@/components/tenancy-actions";
 
@@ -17,7 +18,8 @@ const waLink = (phone: string | null | undefined, text: string) =>
 // SCR-42 Tenancy detail
 export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]">) {
   const { id } = await params;
-  const { ctx, views } = await loadPortfolio();
+  const portfolio = await loadPortfolio();
+  const { ctx, views } = portfolio;
   const v = views.find((x) => x.tenancy.id === id);
   if (!v) notFound();
   const tn = v.tenancy;
@@ -229,6 +231,12 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
           </dl>
         </Card>
       </div>
+
+      {tn.status === "ACTIVE" && (
+        <div className="mt-6">
+          <MetersCard list={meterViews(portfolio, { unitId: v.unit.id })} ctx={ctx} property={v.property} units={[v.unit]} unitId={v.unit.id} />
+        </div>
+      )}
 
       {deposits.length > 0 && (
         <Card title="Deposit" className="mt-6">

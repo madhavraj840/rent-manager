@@ -29,6 +29,20 @@
       "when": 1789822159310,
       "tag": "0003_expenses_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789823707241,
+      "tag": "0004_meters",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789823713516,
+      "tag": "0005_meters_rules",
+      "breakpoints": true
     }
   ]
 }

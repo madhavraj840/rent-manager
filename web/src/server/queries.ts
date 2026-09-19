@@ -41,7 +41,7 @@ export const loadPortfolio = cache(async () => {
   await generateDueCharges(ctx);
   const db = await getDb();
   const ws = ctx.workspace.id;
-  const [properties, units, tenancies, parties, tenants, ledger, revisions, expenses] = await Promise.all([
+  const [properties, units, tenancies, parties, tenants, ledger, revisions, expenses, meters, readingRows] = await Promise.all([
     db.select().from(t.properties).where(and(eq(t.properties.workspaceId, ws), isNull(t.properties.deletedAt))).orderBy(asc(t.properties.name)),
     db.select().from(t.units).where(and(eq(t.units.workspaceId, ws), isNull(t.units.deletedAt))).orderBy(asc(t.units.label)),
     db.select().from(t.tenancies).where(and(eq(t.tenancies.workspaceId, ws), ne(t.tenancies.status, "CANCELLED"), isNull(t.tenancies.deletedAt))),
@@ -50,7 +50,12 @@ export const loadPortfolio = cache(async () => {
     db.select().from(t.ledgerEntries).where(eq(t.ledgerEntries.workspaceId, ws)),
     db.select().from(t.rentRevisions).where(and(eq(t.rentRevisions.workspaceId, ws), isNull(t.rentRevisions.deletedAt))).orderBy(desc(t.rentRevisions.effectiveFrom)),
     db.select().from(t.expenses).where(and(eq(t.expenses.workspaceId, ws), isNull(t.expenses.deletedAt))).orderBy(desc(t.expenses.expenseDate), desc(t.expenses.createdAt)),
+    db.select().from(t.meters).where(and(eq(t.meters.workspaceId, ws), isNull(t.meters.deletedAt))),
+    db.select().from(t.meterReadings).where(eq(t.meterReadings.workspaceId, ws)).orderBy(asc(t.meterReadings.readingDate), asc(t.meterReadings.createdAt)),
   ]);
+  // Same-day order: old meter end, new meter start, then the reading itself.
+  const TYPE_ORDER: Record<string, number> = { METER_END: 0, METER_START: 1, MOVE_IN: 2, REGULAR: 3, MOVE_OUT: 4 };
+  const readings = readingRows.sort((a, b) => a.readingDate.localeCompare(b.readingDate) || TYPE_ORDER[a.readingType] - TYPE_ORDER[b.readingType]);
 
   const byTenancy = Map.groupBy(ledger, (r) => r.tenancyId);
   const tenantById = new Map(tenants.map((x) => [x.id, x]));
@@ -81,7 +86,7 @@ export const loadPortfolio = cache(async () => {
     };
   });
 
-  return { ctx, properties, units, tenants, views, expenses, current: views.filter((v) => v.tenancy.status === "ACTIVE") };
+  return { ctx, properties, units, tenants, views, expenses, meters, readings, current: views.filter((v) => v.tenancy.status === "ACTIVE") };
 });
 
 export type Portfolio = Awaited<ReturnType<typeof loadPortfolio>>;
@@ -107,3 +112,34 @@ export const expensesIn = (p: Portfolio, ym: string, currency: string, propertyI
   p.expenses
     .filter((e) => e.status === "ACTIVE" && e.currency === currency && e.expenseDate.startsWith(ym) && (!propertyId || e.propertyId === propertyId))
     .reduce((s, e) => s + e.amountMinor, 0);
+
+/**
+ * Meters with what the reading forms need: last reading, the billable previous reading
+ * (latest one inside the current tenancy) and the recent average for the high-usage warning (10 §11.2).
+ */
+export function meterViews(p: Portfolio, filter: { propertyId?: string; unitId?: string }) {
+  const natural = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+  const unitLabel = (id: string | null) => (id ? p.units.find((u) => u.id === id)?.label ?? "" : "");
+  return p.meters
+    .filter((m) => !m.archivedAt && (!filter.propertyId || m.propertyId === filter.propertyId) && (!filter.unitId || m.unitId === filter.unitId))
+    .sort((a, b) => (a.unitId ? 0 : 1) - (b.unitId ? 0 : 1) || natural(unitLabel(a.unitId), unitLabel(b.unitId)) || natural(a.label, b.label))
+    .map((meter) => {
+      const readings = p.readings.filter((r) => r.meterId === meter.id);
+      const active = readings.filter((r) => r.status === "ACTIVE");
+      const last = active.at(-1);
+      const v = meter.unitId ? p.current.find((x) => x.unit.id === meter.unitId && x.tenancy.startDate <= p.ctx.today) : undefined;
+      const prev = v ? active.filter((r) => r.tenancyId === v.tenancy.id).at(-1) : undefined;
+      const bills = v?.rows.filter((r) => r.meterReadingId && r.status === "ACTIVE" && active.some((a) => a.id === r.meterReadingId)) ?? [];
+      const recent = bills.slice(-3).map((r) => Number(r.quantity));
+      return {
+        meter,
+        unit: meter.unitId ? p.units.find((u) => u.id === meter.unitId) : undefined,
+        readings,
+        last,
+        view: v,
+        prev,
+        avgConsumption: recent.length ? recent.reduce((s, x) => s + x, 0) / recent.length : 0,
+      };
+    });
+}
+export type MeterView = ReturnType<typeof meterViews>[number];

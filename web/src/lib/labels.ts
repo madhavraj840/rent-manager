@@ -18,3 +18,6 @@ export const EXPENSE_CATEGORIES = {
   REPAIR: "Repair", MAINTENANCE: "Maintenance", UTILITY: "Utility bill", PROPERTY_TAX: "Property tax", INSURANCE: "Insurance",
   SALARY: "Salary", COMMISSION: "Commission", LEGAL: "Legal", LOAN_INTEREST: "Loan interest", OTHER: "Other",
 } as const;
+
+export const METER_TYPES = { ELECTRICITY: "Electricity", WATER: "Water", GAS: "Gas", OTHER: "Other" } as const;
+export const UOMS = { KWH: "kWh", M3: "m³", LITRE: "litres", UNIT: "units" } as const;
