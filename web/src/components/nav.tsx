@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Building2, LayoutDashboard, Users, Wallet } from "lucide-react";
+import { BarChart3, Building2, History, LayoutDashboard, Users, Wallet } from "lucide-react";
 
 // Only pages that exist are listed; the rest of 09 §2.2 is added as each screen ships.
 const ITEMS = [
@@ -11,6 +11,7 @@ const ITEMS = [
   { href: "/tenants", label: "Tenants", icon: Users },
   { href: "/expenses", label: "Expenses", icon: Wallet },
   { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/history", label: "Change history", icon: History },
 ];
 
 export function Nav() {

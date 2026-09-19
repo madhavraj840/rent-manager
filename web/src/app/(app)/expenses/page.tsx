@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { Download } from "lucide-react";
+import { Download, Paperclip } from "lucide-react";
 import { EXPENSE_CATEGORIES, METHODS, label } from "@/lib/labels";
-import { loadPortfolio } from "@/server/queries";
+import { documentsFor, loadPortfolio } from "@/server/queries";
 import { isDay } from "@/server/reports";
 import { ExpenseDialog, VoidExpense, type ExpenseOptions } from "@/components/expense-actions";
-import { Card, Chip, Empty, PageHeader, buttonClass, longDate, money, shortDate } from "@/components/ui";
+import { Card, Chip, Empty, PageHeader, buttonClass, linkClass, longDate, money, shortDate } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Expenses" };
 
@@ -21,6 +21,7 @@ export default async function ExpensesPage({ searchParams }: PageProps<"/expense
 
   const list = p.expenses.filter((e) => e.expenseDate >= from && e.expenseDate <= to
     && (prop === "all" || (prop === "general" ? !e.propertyId : e.propertyId === prop)));
+  const receipts = Map.groupBy((await documentsFor([{ type: "EXPENSE", ids: list.map((e) => e.id) }])).filter((d) => !d.deletedAt), (d) => d.entityId);
   const totals = Map.groupBy(list.filter((e) => e.status === "ACTIVE"), (e) => e.currency);
   const byCategory = [...Map.groupBy(list.filter((e) => e.status === "ACTIVE"), (e) => `${e.currency}|${e.category}`)]
     .map(([k, es]) => ({ currency: k.split("|")[0], category: k.split("|")[1], sum: es.reduce((s, e) => s + e.amountMinor, 0) }))
@@ -108,6 +109,11 @@ export default async function ExpensesPage({ searchParams }: PageProps<"/expense
                         <div className="flex flex-wrap items-center gap-x-1 text-[13px] text-fg-2">
                           <span className="md:hidden">{where} ·</span>
                           {[label(METHODS, e.method), e.reference, e.note, void_ && e.voidReason && `Void: ${e.voidReason}`].filter(Boolean).join(" · ")}
+                          {receipts.get(e.id)?.map((d, i, all) => (
+                            <a key={d.id} href={`/files/${d.id}`} target="_blank" rel="noopener" className={`inline-flex items-center gap-1 ${linkClass}`}>
+                              <Paperclip size={13} aria-hidden />Receipt{all.length > 1 && ` ${i + 1}`}
+                            </a>
+                          ))}
                           {!void_ && (
                             <>
                               <ExpenseDialog o={options} e={e} />

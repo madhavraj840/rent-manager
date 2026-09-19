@@ -31,7 +31,7 @@ export function ExpenseDialog({ o, e, propertyId }: { o: ExpenseOptions; e?: Exp
     <DialogForm
       trigger={e ? <><Pencil size={13} aria-hidden /> Edit</> : "Add expense"} triggerClass={e ? btn.link : btn.primary}
       title={e ? "Edit expense" : "Add expense"} action={saveExpenseAction} submitLabel={e ? "Save" : "Add expense"}
-      fields={["propertyId", "unitId", "category", "amount", "expenseDate", "payee", "method", "reference", "note"]}
+      fields={["propertyId", "unitId", "category", "amount", "expenseDate", "payee", "method", "reference", "note", "receipt"]}
       hidden={e ? { id: e.id } : undefined}
     >
       {(state) => <ExpenseFields o={o} e={e} initialProperty={e ? e.propertyId ?? "" : propertyId ?? ""} state={state} />}
@@ -94,6 +94,10 @@ function ExpenseFields({ o, e, initialProperty, state }: {
           <Input name="note" state={state} defaultValue={e?.note ?? ""} maxLength={500} />
         </Field>
       </div>
+      <Field label={e ? "Add a receipt (optional)" : "Receipt (optional)"} hint="Photo or PDF of the bill, up to 10 MB. It opens from the expense row." name="receipt" state={state}>
+        <input id="receipt" name="receipt" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"
+          className="block w-full text-sm file:mr-3 file:h-9 file:rounded-md file:border file:border-line-strong file:bg-surface file:px-3 file:font-medium hover:file:bg-surface-2" />
+      </Field>
       <p className="text-[13px] text-fg-2">Charging this to a tenant? Add it here, then use Add charge on their tenancy.</p>
     </>
   );

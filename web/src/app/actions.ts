@@ -403,10 +403,23 @@ export async function saveExpenseAction(_: FormState, fd: FormData): Promise<For
       reference: opt(100).parse(f.reference),
       note: opt(500).parse(f.note),
     };
-    if (f.id) await cmd.updateExpense(ctx, f.id, input);
-    else await cmd.addExpense(ctx, input);
+    // Optional receipt (SCR-72): checked before the expense is saved, so a bad file never leaves a half-done save.
+    const file = fd.get("receipt");
+    const receipt = file instanceof File && file.size ? new Uint8Array(await file.arrayBuffer()) : null;
+    if (receipt) cmd.checkDocFile(receipt, "receipt");
+    const id = f.id ? await cmd.updateExpense(ctx, f.id, input) : await cmd.addExpense(ctx, input);
+    let note = "";
+    if (receipt) {
+      try {
+        await cmd.addDocument(ctx, { entityType: "EXPENSE", entityId: id, category: "BILL", fileName: (file as File).name, bytes: receipt });
+        note = " · receipt attached";
+      } catch (e) {
+        if (!(e instanceof cmd.DomainError)) throw e;
+        note = ` · receipt not saved: ${e.message}`;
+      }
+    }
     revalidatePath("/", "layout");
-    return { ok: f.id ? "Expense updated" : "Expense added", at: Date.now() };
+    return { ok: (f.id ? "Expense updated" : "Expense added") + note, at: Date.now() };
   });
 }
 

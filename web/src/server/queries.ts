@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
-import { and, asc, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, like, lt, ne, or, sql } from "drizzle-orm";
 import { getDb, t } from "@/db";
 import { allocate } from "@/lib/money";
 import { generateDueCharges, toEntry, type Ctx } from "./commands";
@@ -153,4 +153,19 @@ export async function documentsFor(parents: { type: string; ids: string[] }[]) {
   const wanted = parents.filter((p) => p.ids.length).map((p) => and(eq(t.documents.entityType, p.type), inArray(t.documents.entityId, p.ids)));
   if (!wanted.length) return [];
   return db.select().from(t.documents).where(and(eq(t.documents.workspaceId, ctx.workspace.id), or(...wanted))).orderBy(desc(t.documents.createdAt));
+}
+
+/** SCR-99: one page of the audit trail, newest first. `prefix` filters by action group ("payment.", "tenancy."…). */
+export async function auditPage(opts: { from: string; to: string; prefixes?: string[]; offset: number; limit: number }) {
+  const ctx = await requireCtx();
+  const db = await getDb();
+  const rows = await db.select({ e: t.auditEvents, who: t.memberships.displayName }).from(t.auditEvents)
+    .leftJoin(t.memberships, and(eq(t.memberships.userId, t.auditEvents.actorId), eq(t.memberships.workspaceId, t.auditEvents.workspaceId)))
+    .where(and(
+      eq(t.auditEvents.workspaceId, ctx.workspace.id),
+      gte(t.auditEvents.at, opts.from), lt(t.auditEvents.at, sql`${opts.to}::date + 1`),
+      opts.prefixes ? or(...opts.prefixes.map((p) => like(t.auditEvents.action, `${p}%`))) : undefined,
+    ))
+    .orderBy(desc(t.auditEvents.at)).offset(opts.offset).limit(opts.limit + 1);
+  return { rows: rows.slice(0, opts.limit), more: rows.length > opts.limit };
 }

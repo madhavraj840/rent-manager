@@ -782,13 +782,19 @@ export function sniffMime(b: Uint8Array): string | null {
 
 export const docFile = (storagePath: string) => path.join(filesDir(), storagePath);
 
-const DOC_PARENTS = { PROPERTY: t.properties, TENANT: t.tenants, TENANCY: t.tenancies } as const;
+const DOC_PARENTS = { PROPERTY: t.properties, TENANT: t.tenants, TENANCY: t.tenancies, EXPENSE: t.expenses } as const;
 export type DocParent = keyof typeof DOC_PARENTS;
 
+/** Throws a field error unless the bytes are an allowed file; returns its type. */
+export function checkDocFile(bytes: Uint8Array, field = "file") {
+  const mimeType = sniffMime(bytes);
+  if (!mimeType) throw new DomainError("VALIDATION", "Choose a photo (JPG, PNG, WebP) or a PDF.", field);
+  if (bytes.length > DOC_LIMITS.maxBytes) throw new DomainError("VALIDATION", "The file is larger than 10 MB. Choose a smaller file.", field);
+  return mimeType;
+}
+
 export async function addDocument(ctx: Ctx, input: { entityType: DocParent; entityId: string; category: string; title?: string; fileName: string; bytes: Uint8Array }) {
-  const mimeType = sniffMime(input.bytes);
-  if (!mimeType) throw new DomainError("VALIDATION", "Choose a photo (JPG, PNG, WebP) or a PDF.", "file");
-  if (input.bytes.length > DOC_LIMITS.maxBytes) throw new DomainError("VALIDATION", "The file is larger than 10 MB. Choose a smaller file.", "file");
+  const mimeType = checkDocFile(input.bytes);
   await purgeDeletedDocuments(ctx);
   const id = crypto.randomUUID();
   const storagePath = `ws/${ctx.workspace.id}/${id}`;
