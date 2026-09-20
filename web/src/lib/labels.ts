@@ -3,6 +3,7 @@ export const METHODS = { CASH: "Cash", UPI: "UPI", BANK_TRANSFER: "Bank", CHEQUE
 export const PAY_METHODS = ["CASH", "UPI", "BANK_TRANSFER", "CHEQUE", "CARD", "MOBILE_WALLET", "OTHER"] as const;
 
 export const CHARGE_CATEGORIES = { UTILITY: "Electricity / water", MAINTENANCE: "Maintenance", LATE_FEE: "Late fee", PARKING: "Parking", DAMAGE: "Damage", CLEANING: "Cleaning", TAX: "Tax", OTHER: "Other" } as const;
+export const RECURRING_CATEGORIES = { MAINTENANCE: "Maintenance", PARKING: "Parking", UTILITY: "Electricity / water", TAX: "Tax", OTHER: "Other" } as const;
 export const CREDIT_CATEGORIES = { DISCOUNT: "Discount", WAIVER: "Waiver", ADJUSTMENT: "Adjustment", WRITE_OFF: "Write-off" } as const;
 
 export const PROPERTY_TYPES = {
@@ -28,3 +29,24 @@ export const DOC_CATEGORIES = {
 } as const;
 /** Always sensitive (05 §2.19). They are about a person, so on a tenancy they are filed under the tenant and follow them to later tenancies. */
 export const PERSON_DOCS: readonly string[] = ["ID_PROOF", "ADDRESS_PROOF", "POLICE_VERIFICATION"];
+
+/** How tenants can pay you (SCR-11). Stored on the workspace; added to reminder messages. */
+export interface PayTo {
+  upiId?: string;
+  accountName?: string;
+  accountNumber?: string;
+  ifsc?: string;
+  bankName?: string;
+  note?: string;
+}
+
+/** The lines added to a reminder, so the tenant can pay without asking how. */
+export function payToLines(p?: PayTo | null): string[] {
+  if (!p) return [];
+  const out: string[] = [];
+  if (p.upiId) out.push(`UPI: ${p.upiId}`);
+  if (p.accountNumber) out.push(["Bank:", p.bankName, p.accountName && `a/c of ${p.accountName}`, p.accountNumber, p.ifsc && `IFSC ${p.ifsc}`].filter(Boolean).join(" "));
+  else if (p.accountName || p.bankName || p.ifsc) out.push(["Bank:", p.bankName, p.accountName, p.ifsc && `IFSC ${p.ifsc}`].filter(Boolean).join(" "));
+  if (p.note) out.push(p.note);
+  return out;
+}

@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { Fragment } from "react";
 import Link from "next/link";
 import { addDays } from "@/lib/money";
-import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, DOC_CATEGORIES, EXPENSE_CATEGORIES, METER_TYPES, METHODS, PROPERTY_TYPES, UNIT_TYPES, UOMS } from "@/lib/labels";
+import {
+  CHARGE_CATEGORIES, CREDIT_CATEGORIES, DOC_CATEGORIES, EXPENSE_CATEGORIES, METER_TYPES, METHODS, PROPERTY_TYPES, RECURRING_CATEGORIES, UNIT_TYPES, UOMS,
+} from "@/lib/labels";
 import { auditPage, loadPortfolio } from "@/server/queries";
 import { isDay } from "@/server/reports";
 import { Card, Empty, PageHeader, buttonClass, linkClass, longDate, money } from "@/components/ui";
@@ -14,19 +16,20 @@ const PAGE = 50;
 
 // Plain words for each audited action (C-8).
 const ACTIONS: Record<string, string> = {
-  "workspace.create": "Created the workspace", "rent.generate": "Added this month's rent",
+  "workspace.create": "Created the workspace", "workspace.update": "Changed settings", "rent.generate": "Added this month's rent",
   "property.create": "Added a property", "property.update": "Edited a property", "unit.create_many": "Added rooms",
   "tenancy.start": "Added a tenant", "tenancy.add_existing": "Added a tenant already living there", "tenancy.update_terms": "Edited rent terms",
-  "tenancy.notice": "Saved a leaving date", "tenancy.notice_withdraw": "Tenant is staying (leaving date removed)", "settlement.finalize": "Moved a tenant out (final bill)",
+  "tenancy.notice": "Saved a leaving date", "tenancy.notice_withdraw": "Tenant is staying (leaving date removed)", "settlement.finalize": "Moved a tenant out (final bill)", "tenancy.cancel": "Removed a room record added by mistake",
   "tenant.update": "Edited tenant details", "rent.revise": "Changed rent",
-  "payment.record": "Recorded a payment", "charge.add": "Added a charge", "credit.add": "Gave a discount", "ledger.void": "Cancelled an entry",
+  "payment.record": "Recorded a payment", "charge.add": "Added a charge", "credit.add": "Gave a discount", "ledger.void": "Cancelled an entry", "refund.record": "Gave money back",
+  "recurring.add": "Added a charge that repeats every month", "recurring.stop": "Stopped a monthly charge",
   "expense.create": "Added an expense", "expense.update": "Edited an expense", "expense.void": "Cancelled an expense",
   "meter.create": "Added a meter", "meter.update": "Edited a meter", "reading.record": "Entered a meter reading", "reading.void": "Cancelled a meter reading",
   "document.add": "Added a document", "document.delete": "Deleted a document", "document.restore": "Restored a document", "document.view": "Opened a sensitive document",
 };
 
 const GROUPS: Record<string, { label: string; prefixes: string[] }> = {
-  money: { label: "Payments and charges", prefixes: ["payment.", "charge.", "credit.", "ledger.", "rent."] },
+  money: { label: "Payments and charges", prefixes: ["payment.", "charge.", "credit.", "ledger.", "rent.", "refund.", "recurring."] },
   tenancies: { label: "Tenants", prefixes: ["tenancy.", "tenant.", "settlement."] },
   properties: { label: "Properties and rooms", prefixes: ["property.", "unit."] },
   meters: { label: "Meters and readings", prefixes: ["meter.", "reading."] },
@@ -38,8 +41,10 @@ const GROUPS: Record<string, { label: string; prefixes: string[] }> = {
 const MONEY_KEYS = /minor$|^amount$|^rent$|^charged$/i;
 // Stored codes in plain words (C-8, C-11).
 const CODES: Record<string, string> = {
-  ...PROPERTY_TYPES, ...UNIT_TYPES, ...METER_TYPES, ...DOC_CATEGORIES, ...CREDIT_CATEGORIES, ...CHARGE_CATEGORIES, ...EXPENSE_CATEGORIES, ...METHODS, ...UOMS,
-  CHARGE: "Charge", PAYMENT: "Payment", CREDIT: "Discount", REFUND: "Refund",
+  ...PROPERTY_TYPES, ...UNIT_TYPES, ...METER_TYPES, ...DOC_CATEGORIES, ...CREDIT_CATEGORIES, ...CHARGE_CATEGORIES, ...RECURRING_CATEGORIES, ...EXPENSE_CATEGORIES,
+  ...METHODS, ...UOMS,
+  CHARGE: "Charge", PAYMENT: "Payment", CREDIT: "Discount", REFUND: "Money given back",
+  RENT: "Rent and charges", DEPOSIT: "Security deposit",
   TENANT: "The tenant", LANDLORD: "You", TENANCY: "Tenant record", PROPERTY: "Property", EXPENSE: "Expense",
 };
 // Field names people understand. Keys that only hold IDs are hidden.
@@ -53,6 +58,8 @@ const FIELD_NAMES: Record<string, string> = {
   region: "state", postalCode: "PIN code", fullName: "name", altPhone: "other phone", emergencyName: "emergency contact",
   emergencyPhone: "emergency phone", depositHeldMinor: "deposit already held", openingOwedMinor: "owed from before",
   openingAdvanceMinor: "paid ahead from before", cycleDay: "rent day", billingStart: "rent charged from", startDate: "moved in",
+  account: "given back from", startOn: "first month", endOn: "last month", chargesMade: "months charged now", chargesCancelled: "charges crossed out",
+  roundToWholeUnits: "round part-month rent", receiptPrefix: "receipt numbers start with", timeZone: "time zone", displayName: "your name",
 };
 const HIDDEN = /(^id$|Id$|^reading$|^charge$|^settlement$|^receipts$)/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;

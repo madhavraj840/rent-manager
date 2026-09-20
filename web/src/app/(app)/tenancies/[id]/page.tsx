@@ -2,16 +2,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileText, MessageCircle, Phone } from "lucide-react";
-import { nextPeriodStart, periodStartFor, runningBalances } from "@/lib/money";
-import { METHODS, label } from "@/lib/labels";
-import { documentsFor, loadPortfolio, meterViews } from "@/server/queries";
+import { nextPeriodStart, periodStartFor, rentSchedule, roundingUnit, runningBalances } from "@/lib/money";
+import { METHODS, RECURRING_CATEGORIES, label, payToLines, type PayTo } from "@/lib/labels";
+import { documentsFor, loadPortfolio, meterViews, recurringFor } from "@/server/queries";
 import { DocumentsCard } from "@/components/documents";
 import { MetersCard } from "@/components/meters";
 import { Card, Chip, Crumbs, TenancyStatus, buttonClass, linkClass, longDate, money, paymentContext, shortDate } from "@/components/ui";
-import { AddCharge, AddCredit, ChangeRent, EditTenant, EditTerms, GiveNotice, RecordPayment, VoidEntry, WithdrawNotice } from "@/components/tenancy-actions";
+import {
+  AddCharge, AddCredit, AddRecurring, CancelTenancy, ChangeRent, EditTenant, EditTerms, GiveNotice, RecordPayment, Refund, StopRecurring, VoidEntry, WithdrawNotice,
+} from "@/components/tenancy-actions";
 
 export const metadata: Metadata = { title: "Tenant" };
 
+const yearAhead = (d: string) => `${Number(d.slice(0, 4)) + 1}${d.slice(4)}`;
 const ordinal = (n: number) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th");
 const waLink = (phone: string | null | undefined, text: string) =>
   phone ? `https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
@@ -36,11 +39,30 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
   const signature = ctx.userName ?? ctx.workspace.name;
   const docs = await documentsFor([{ type: "TENANCY", ids: [tn.id] }, { type: "TENANT", ids: v.people.map((p) => p.id) }]);
 
-  // Reminder text (12 §5)
+  // What will be charged next (F-TNCY-8): the rent months ahead that have no charge yet, up to 12.
+  const chargedStarts = new Set(v.rows.filter((r) => r.source === "AUTO" && r.status === "ACTIVE" && r.periodStart).map((r) => r.periodStart!));
+  const stopOn = tn.movedOutOn ?? tn.plannedMoveOutDate;
+  const planLimit = stopOn && stopOn < yearAhead(ctx.today) ? stopOn : yearAhead(ctx.today);
+  const revs = [...v.revisions].sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom));
+  const plan = tn.status !== "ACTIVE" || !revs.length ? [] : rentSchedule({
+    tenancyId: tn.id, billingStart: tn.billingStartDate, cycleDay: tn.cycleDay, graceDays: tn.graceDays, until: planLimit,
+    unit: roundingUnit(cur, ctx.workspace.roundToWholeUnits),
+    rentAt: (st) => (revs.find((r) => r.effectiveFrom <= st) ?? revs[revs.length - 1]).rentMinor,
+  }).filter((c) => !chargedStarts.has(c.periodStart)).slice(0, 12);
+  const repeating = await recurringFor(tn.id);
+  const planRows = plan.map((c) => {
+    const add = repeating.filter((rc) => periodStartFor(rc.startOn, tn.cycleDay) <= c.periodStart && (!rc.endOn || c.periodStart <= rc.endOn));
+    return { ...c, add, total: c.amount + add.reduce((sum, rc) => sum + rc.amountMinor, 0) };
+  });
+  const planTotal = planRows.reduce((sum, c) => sum + c.total, 0);
+
+  // Reminder text (12 §5). Payment details from Settings are added, so the tenant can pay without asking how.
   const oldest = b.charges.find((c) => c.remaining > 0);
+  const payLines = payToLines(ctx.workspace.paymentInstructions as PayTo | null);
+  const payBlock = payLines.length ? `\nYou can pay by:\n${payLines.map((l) => `\u2022 ${l}`).join("\n")}\n` : "";
   const reminder = b.overdue > 0 && b.charges.filter((c) => c.remaining > 0).length > 1
-    ? `Hello ${primary?.fullName.split(" ")[0]}, your pending balance for ${v.unit.label} is ${money(b.balance, cur)}, including dues since ${oldest?.entry.description.replace("Rent · ", "")}.\nPlease let me know once paid. Thank you, ${signature}`
-    : `Hello ${primary?.fullName.split(" ")[0]}, a gentle reminder that rent of ${money(Math.max(b.balance, 0), cur)} for ${v.unit.label}, ${v.property.name}${oldest ? ` for ${oldest.entry.description.replace("Rent · ", "")}` : ""} is due${oldest?.entry.dueDate ? ` on ${longDate(oldest.entry.dueDate)}` : ""}.\nThank you, ${signature}`;
+    ? `Hello ${primary?.fullName.split(" ")[0]}, your pending balance for ${v.unit.label} is ${money(b.balance, cur)}, including dues since ${oldest?.entry.description.replace("Rent · ", "")}.\n${payBlock}Please let me know once paid. Thank you, ${signature}`
+    : `Hello ${primary?.fullName.split(" ")[0]}, a gentle reminder that rent of ${money(Math.max(b.balance, 0), cur)} for ${v.unit.label}, ${v.property.name}${oldest ? ` for ${oldest.entry.description.replace("Rent · ", "")}` : ""} is due${oldest?.entry.dueDate ? ` on ${longDate(oldest.entry.dueDate)}` : ""}.\n${payBlock}Thank you, ${signature}`;
 
   const headline = tn.status === "CLOSED" ? "Moved out" : b.balance > 0 ? `${money(b.balance, cur)} due` : b.balance < 0 ? `Advance ${money(b.advance, cur)}` : "All paid";
 
@@ -123,6 +145,7 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
                 chargedStarts={v.rows.filter((r) => r.source === "AUTO" && r.status === "ACTIVE" && r.periodStart).map((r) => r.periodStart!)} />
             )}
             {tn.status === "ACTIVE" && !tn.plannedMoveOutDate && <GiveNotice p={pc} name={primary?.fullName ?? "the tenant"} startDate={tn.startDate} leaseEnd={tn.leaseEndDate} />}
+            {(b.advance > 0 || b.depositHeld > 0) && <Refund p={pc} />}
             {tn.status === "ACTIVE" && <Link href={`/tenancies/${tn.id}/move-out`} className={`${buttonClass.ghost} sm:ml-auto`}>Move out</Link>}
           </div>
         )}
@@ -197,6 +220,61 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
         </div>
       </Card>
 
+      {(repeating.length > 0 || tn.status === "ACTIVE") && (
+        <Card title="Charges added every month" className="mt-6"
+          action={tn.status === "ACTIVE" ? <AddRecurring p={pc} cycleDay={tn.cycleDay} /> : undefined}>
+          {repeating.length ? (
+            <ul className="divide-y divide-line text-sm">
+              {repeating.map((rc) => {
+                const stopped = !!rc.endOn && rc.endOn < ctx.today;
+                return (
+                  <li key={rc.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3">
+                    <span className="min-w-0">
+                      <span className={stopped ? "text-fg-2" : ""}>{rc.description}</span>
+                      <span className="block text-[13px] text-fg-2">
+                        {label(RECURRING_CATEGORIES, rc.category)} · from {longDate(rc.startOn)}
+                        {rc.endOn ? ` · ${stopped ? "stopped after" : "last month"} ${longDate(rc.endOn)}` : " · until you stop it"}
+                        {tn.status === "ACTIVE" && !stopped && <> <StopRecurring id={rc.id} summary={`${rc.description} · ${money(rc.amountMinor, cur)} a month`} today={ctx.today} /></>}
+                      </span>
+                    </span>
+                    <span className={`num font-medium ${stopped ? "text-fg-2" : ""}`}>{money(rc.amountMinor, cur)} a month</span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="px-4 py-5 text-sm text-fg-2">
+              Nothing yet. Add maintenance, parking or any fixed amount here and it is charged with the rent every month, without you typing it again.
+            </p>
+          )}
+        </Card>
+      )}
+
+      {planRows.length > 0 && (
+        <Card title="Rent still to come" className="mt-6"
+          action={<span className="num text-[13px] text-fg-2">{planRows.length === 1 ? "1 month" : `${planRows.length} months`} · {money(planTotal, cur)} in total</span>}>
+          <p className="border-b border-line px-4 py-2.5 text-[13px] text-fg-2">
+            Nothing here is charged yet. Each row is added by itself on the day it starts.
+          </p>
+          <ul className="divide-y divide-line text-sm">
+            {planRows.map((c) => (
+              <li key={c.periodStart} className="flex flex-wrap justify-between gap-x-4 px-4 py-2.5">
+                <span>
+                  {c.description.replace("Rent · ", "")}
+                  {c.add.length > 0 && (
+                    <span className="num block text-[13px] text-fg-2">
+                      rent {money(c.amount, cur)}{c.add.map((rc) => ` + ${rc.description} ${money(rc.amountMinor, cur)}`).join("")}
+                    </span>
+                  )}
+                </span>
+                <span className="num text-fg-2">charged {shortDate(c.periodStart)} · pay by {shortDate(c.dueDate)}</span>
+                <span className="num w-full text-right font-medium sm:w-auto">{money(c.total, cur)}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card title={v.people.length > 1 ? "Tenants" : "Tenant"}>
           <ul className="divide-y divide-line text-sm">
@@ -243,6 +321,13 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
       {tn.status === "ACTIVE" && (
         <div className="mt-6">
           <MetersCard list={meterViews(portfolio, { unitId: v.unit.id })} ctx={ctx} property={v.property} units={[v.unit]} unitId={v.unit.id} />
+        </div>
+      )}
+
+      {tn.status === "ACTIVE" && !v.rows.some((r) => r.status === "ACTIVE" && (r.kind === "PAYMENT" || r.kind === "REFUND")) && (
+        <div className="mt-6 flex flex-wrap items-center gap-1 text-[13px] text-fg-2">
+          Wrong room, or wrong person? No money has been recorded here yet, so this record can still be removed.
+          <CancelTenancy p={pc} name={primary?.fullName ?? "This tenant"} unit={v.unit.label} />
         </div>
       )}
 

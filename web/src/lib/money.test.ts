@@ -49,7 +49,7 @@ test("formats per currency minor units", () => {
   assert.equal(formatMoney(1234, "JPY", "en-US"), "¥1,234");
 });
 
-import { moveOutCredit, parseMoney, periodStartFor, prorate, rentSchedule } from "./money.ts";
+import { moveOutCredit, parseMoney, periodLabel, periodStartFor, prorate, rentSchedule } from "./money.ts";
 
 test("periods (10 §4.1)", () => {
   assert.equal(periodStartFor("2026-09-18", 1), "2026-09-01");
@@ -105,4 +105,11 @@ test("FIN-TEST-012 utility amounts", () => {
   assert.equal(parseScaled("1.2345", 4), 12345);
   assert.equal(parseScaled("1.23456", 4), null);
   assert.equal(formatScaled(4951500, 3), "4951.5");
+});
+
+// The label a repeating monthly charge carries (F-MONEY-10) must match the one rent uses.
+test("periodLabel", () => {
+  assert.equal(periodLabel("2026-09-01", "2026-09-30", 1), "Sep 2026");
+  assert.equal(periodLabel("2026-09-05", "2026-10-04", 5), "5 Sep – 4 Oct 2026");
+  assert.equal(periodLabel("2026-12-01", "2026-12-31", 1), "Dec 2026");
 });

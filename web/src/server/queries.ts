@@ -149,6 +149,15 @@ export function meterViews(p: Portfolio, filter: { propertyId?: string; unitId?:
 }
 export type MeterView = ReturnType<typeof meterViews>[number];
 
+/** Repeating monthly charges set up for one room record (F-MONEY-10). */
+export async function recurringFor(tenancyId: string) {
+  const ctx = await requireCtx();
+  const db = await getDb();
+  return db.select().from(t.recurringCharges)
+    .where(and(eq(t.recurringCharges.workspaceId, ctx.workspace.id), eq(t.recurringCharges.tenancyId, tenancyId), isNull(t.recurringCharges.deletedAt)))
+    .orderBy(asc(t.recurringCharges.startOn));
+}
+
 export type DocRow = typeof t.documents.$inferSelect;
 
 /** Documents attached to any of these records, newest first; includes ones deleted in the last 30 days (restorable). */

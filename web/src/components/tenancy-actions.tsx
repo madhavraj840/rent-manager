@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import {
-  addChargeAction, addCreditAction, changeRentAction, giveNoticeAction, recordPaymentAction, updateTenantAction, updateTermsAction, voidEntryAction, withdrawNoticeAction,
+  addChargeAction, addCreditAction, addRecurringAction, cancelTenancyAction, changeRentAction, giveNoticeAction, recordPaymentAction, refundAction,
+  stopRecurringAction, updateTenantAction, updateTermsAction, voidEntryAction, withdrawNoticeAction,
 } from "@/app/actions";
 import { addDays, currencyDigits, formatMoney } from "@/lib/money";
-import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, METHODS, PAY_METHODS } from "@/lib/labels";
+import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, METHODS, PAY_METHODS, RECURRING_CATEGORIES } from "@/lib/labels";
 import { DialogForm } from "./dialog-form";
 import { Field, Input, MoneyInput, Outcome, Select } from "./form";
 
@@ -19,6 +20,9 @@ export interface PaymentContext {
   due: number;
   overdue: number;
   depositDue: number;
+  /** Money the tenant has paid ahead, and deposit still held: what can be given back. */
+  advance: number;
+  depositHeld: number;
   open: { label: string; remaining: number; amount: number }[];
 }
 
@@ -186,6 +190,191 @@ export function AddCredit({ p }: { p: PaymentContext }) {
             <Input name="reason" state={state} maxLength={200} placeholder="e.g. Plumbing repair paid by tenant" required />
           </Field>
           <Outcome>What {p.title} owes goes down by this amount, oldest dues first. It shows under Payments and charges. No receipt is given.</Outcome>
+        </>
+      )}
+    </DialogForm>
+  );
+}
+
+// ---------- Repeating monthly charges (F-MONEY-10) ----------
+
+/** First day of the month after `today`, so a new repeating charge starts next month by default. */
+const nextMonthStart = (today: string) => {
+  const [y, m] = today.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+};
+
+export function AddRecurring({ p, cycleDay }: { p: PaymentContext; cycleDay: number }) {
+  return (
+    <DialogForm
+      trigger="Add a monthly charge" triggerClass={btn.compact} title="Add a charge every month" subtitle={p.title}
+      action={addRecurringAction} submitLabel="Save monthly charge" fields={["category", "description", "amount", "startOn", "endOn"]}
+      hidden={{ tenancyId: p.tenancyId }}
+    >
+      {(state) => <RecurringFields p={p} state={state} cycleDay={cycleDay} />}
+    </DialogForm>
+  );
+}
+
+function RecurringFields({ p, state, cycleDay }: { p: PaymentContext; state: Parameters<typeof Field>[0]["state"]; cycleDay: number }) {
+  const [category, setCategory] = useState<keyof typeof RECURRING_CATEGORIES>("MAINTENANCE");
+  const [description, setDescription] = useState("Maintenance");
+  const [start, setStart] = useState(nextMonthStart(p.today));
+  const [amount, setAmount] = useState("");
+  const defaults: Record<string, string> = { MAINTENANCE: "Maintenance", PARKING: "Parking", UTILITY: "Water charge", TAX: "Tax", OTHER: "" };
+  const nice = (d: string) => new Date(d + "T00:00:00Z").toLocaleDateString(p.locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  const past = start < p.today;
+  return (
+    <>
+      <p className="text-sm">A fixed amount added with the rent every month, so you never type it again.</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Type" name="category" state={state}>
+          <Select name="category" state={state} value={category} onChange={(e) => {
+            const c = e.target.value as keyof typeof RECURRING_CATEGORIES;
+            if (description === defaults[category]) setDescription(defaults[c]);
+            setCategory(c);
+          }}>
+            {Object.entries(RECURRING_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </Select>
+        </Field>
+        <Field label="Amount each month" name="amount" state={state}>
+          <MoneyInput name="amount" state={state} currency={p.currency} value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        </Field>
+      </div>
+      <Field label="What it is for" name="description" state={state} hint="The tenant sees these words on the bill and in their statement.">
+        <Input name="description" state={state} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={120} required />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="First month" name="startOn" state={state}>
+          <Input type="date" name="startOn" state={state} value={start} onChange={(e) => setStart(e.target.value)} required />
+        </Field>
+        <Field label="Last month (optional)" name="endOn" state={state} hint="Leave empty to keep charging until you stop it.">
+          <Input type="date" name="endOn" state={state} />
+        </Field>
+      </div>
+      <Outcome>
+        {amount ? `${formatMoney(Math.round((Number(amount.replace(/,/g, "")) || 0) * 10 ** currencyDigits(p.currency)), p.currency, p.locale)} ` : "The amount "}
+        is added to what {p.title} owes on the {cycleDay === 1 ? "1st" : `${cycleDay}th`} of every month, starting with the month that holds {nice(start)}.
+        {past && " Months already gone by are added straight away."} The rent itself does not change.
+      </Outcome>
+    </>
+  );
+}
+
+export function StopRecurring({ id, summary, today }: { id: string; summary: string; today: string }) {
+  return (
+    <DialogForm
+      trigger="Stop" triggerClass={btn.link} title="Stop this monthly charge?" subtitle={summary}
+      action={stopRecurringAction} submitLabel="Stop it" fields={["endOn"]} hidden={{ id }}
+    >
+      {(state) => (
+        <>
+          <p className="text-sm">It keeps being charged up to the date you choose, then stops.</p>
+          <Field label="Charge it for the last time in the month holding" name="endOn" state={state}>
+            <Input type="date" name="endOn" state={state} defaultValue={today} required />
+          </Field>
+          <Outcome>No new months are charged after that date. Charges already made stay as they are; cancel any that are wrong one by one.</Outcome>
+        </>
+      )}
+    </DialogForm>
+  );
+}
+
+// ---------- Give money back (F-MONEY-9) ----------
+
+export function Refund({ p }: { p: PaymentContext }) {
+  return (
+    <DialogForm
+      trigger="Give money back" triggerClass={btn.secondary} title="Give money back" subtitle={p.title}
+      action={refundAction} submitLabel="Record money given back" fields={["account", "amount", "date", "method"]} hidden={{ tenancyId: p.tenancyId }}
+    >
+      {(state) => <RefundFields p={p} state={state} />}
+    </DialogForm>
+  );
+}
+
+function RefundFields({ p, state }: { p: PaymentContext; state: Parameters<typeof Field>[0]["state"] }) {
+  const both = p.advance > 0 && p.depositHeld > 0;
+  const [account, setAccount] = useState<"RENT" | "DEPOSIT">(p.advance > 0 ? "RENT" : "DEPOSIT");
+  const most = account === "DEPOSIT" ? p.depositHeld : p.advance;
+  const [amount, setAmount] = useState(toMajor(most, p.currency));
+  const fmt = (m: number) => formatMoney(m, p.currency, p.locale);
+  const option = "flex items-center gap-2 rounded-md border border-line-strong px-3 py-2 has-[:checked]:border-primary has-[:checked]:bg-primary-soft";
+  const pick = (a: "RENT" | "DEPOSIT", limit: number) => { setAccount(a); setAmount(toMajor(limit, p.currency)); };
+
+  if (p.advance <= 0 && p.depositHeld <= 0)
+    return <p className="text-sm">There is nothing to give back. The tenant has not paid ahead and you hold no deposit.</p>;
+
+  return (
+    <>
+      <p className="text-sm">Use this when you hand back money you are holding — cash, a bank transfer, or any other way.</p>
+      {both ? (
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-medium">What are you giving back?</legend>
+          <div className="grid gap-2 text-sm">
+            <label className={option}>
+              <input type="radio" name="account" value="RENT" checked={account === "RENT"} onChange={() => pick("RENT", p.advance)} />
+              Rent paid ahead · {fmt(p.advance)} held
+            </label>
+            <label className={option}>
+              <input type="radio" name="account" value="DEPOSIT" checked={account === "DEPOSIT"} onChange={() => pick("DEPOSIT", p.depositHeld)} />
+              Security deposit · {fmt(p.depositHeld)} held
+            </label>
+          </div>
+        </fieldset>
+      ) : (
+        <>
+          <input type="hidden" name="account" value={account} />
+          <p className="text-sm font-medium">{account === "DEPOSIT" ? `Security deposit · ${fmt(p.depositHeld)} held` : `Rent paid ahead · ${fmt(p.advance)} held`}</p>
+        </>
+      )}
+      <Field label="Amount given back" name="amount" state={state} hint={`At most ${fmt(most)}.`}>
+        <MoneyInput name="amount" state={state} currency={p.currency} value={amount} onChange={(e) => setAmount(e.target.value)} required />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Date given back" name="date" state={state}>
+          <Input type="date" name="date" state={state} defaultValue={p.today} max={p.today} required />
+        </Field>
+        <Field label="How" name="method" state={state}>
+          <Select name="method" state={state} defaultValue="CASH">
+            {PAY_METHODS.map((m) => <option key={m} value={m}>{METHODS[m]}</option>)}
+          </Select>
+        </Field>
+      </div>
+      <Field label="Note (optional)" name="note">
+        <Input name="note" maxLength={500} />
+      </Field>
+      <Outcome>
+        {account === "DEPOSIT"
+          ? "The deposit you hold goes down by this amount."
+          : "What the tenant has paid ahead goes down by this amount, so the next rent is owed in full."}
+        {" "}It shows under Payments and charges. No receipt is given.
+      </Outcome>
+    </>
+  );
+}
+
+// ---------- Undo a room record added by mistake (F-TNCY-9) ----------
+
+export function CancelTenancy({ p, name, unit }: { p: PaymentContext; name: string; unit: string }) {
+  return (
+    <DialogForm
+      trigger="Added by mistake" triggerClass={btn.link} title="Was this record added by mistake?" subtitle={p.title}
+      action={cancelTenancyAction} submitLabel="Yes, remove this record" fields={["reason"]} hidden={{ tenancyId: p.tenancyId }}
+    >
+      {(state) => (
+        <>
+          <p className="text-sm">
+            Use this only when {name} never lived in {unit} — the wrong room, the wrong person, or entered twice.
+            If they did live here and are leaving, use <span className="font-medium">Move out</span> instead.
+          </p>
+          <Field label="Why was it wrong?" name="reason" state={state}>
+            <Input name="reason" state={state} maxLength={200} placeholder="e.g. Added to the wrong room" required />
+          </Field>
+          <Outcome>
+            {unit} becomes empty again and every rent charge made here is crossed out. The record leaves your lists,
+            but stays in Change history so you can see what happened. This cannot be undone.
+          </Outcome>
         </>
       )}
     </DialogForm>

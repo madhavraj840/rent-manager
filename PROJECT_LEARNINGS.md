@@ -91,6 +91,15 @@ Only record what was seen in the code or confirmed by a test. Mark guesses **ASS
 - **Fix:** check the ID with `workspace_id = ctx.workspace.id` before using it.
 - **How to find more:** grep for `.where(eq(t.X.id` without `workspaceId`.
 
+### A `DialogForm` inside a `<p>` breaks hydration
+- **What happened (2026-09-20):** the "Added by mistake" link sat in a `<p>`. `DialogForm` renders a `<dialog>`, which a paragraph cannot hold, so React logged a hydration error.
+- **Correct approach:** wrap a dialog trigger in a `<div>` or a `<span>`, never a `<p>`. The browser tests fail the run on any console error, which is how this was caught.
+
+### A charge the app generates must also stop at move-out
+- **What happened (2026-09-20):** `settlementPreview` cancelled future charges by `category = 'RENT'`, so the new repeating monthly charges would have survived the move-out.
+- **Correct approach:** cancel every `source = 'AUTO'` charge whose period starts after the leaving date, and prorate only rent.
+- **How to find more:** grep for `source === "AUTO"` and check each place treats all generated charges alike.
+
 ### Circular import between `ui.tsx` and the action components
 - **Correct approach:** shared form pieces (`Outcome`, `Field`) live in `components/form.tsx`, not `ui.tsx`.
 
@@ -170,3 +179,5 @@ These are NEEDS WORK, not bugs yet, because today there is one local user.
 - **No rate limits** on uploads, exports or search.
 - **Exports have a date range but no row cap.**
 - **Deleted files are purged only when the next upload happens.** A scheduled job is needed.
+- **Settings has no "delete my account".** It needs a confirmed, irreversible wipe of the workspace rows, the stored files and the Supabase auth user, plus an export offered first. Left out on purpose (2026-09-20) rather than shipped half done.
+- **Settings cannot change the currency or the country.** Every saved amount is in the workspace currency, so a change would need a conversion and a re-statement of history.

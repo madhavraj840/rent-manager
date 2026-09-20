@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 0.2 |
+| Version | 0.3 |
 | Status | In use. Every screen must follow it. |
 | Date | 2026-09-20 (0.1: 2026-09-19) |
 | Extends | [09 UI/UX Specification](09_UI_UX_SPECIFICATION.md). It changes no features, data or rules; it only covers how screens explain themselves. |
@@ -157,6 +157,12 @@ These live in `web/src/components/ui.tsx`, so every page gets the same behaviour
 | Documents card | New in 0.2 | Stretched rows that open the file; the add form has a "What happens" box; the toast names the place | C-1, C-5, C-6 |
 | Expenses | No "What happens" box; the toast didn't say where; the Edit/Cancel links were hidden in the text line | "What happens" box; the toast says where; Edit and Cancel get their own column | C-3, C-5, C-6 |
 | Change history | Details showed IDs, codes and scaled numbers | Plain names and real values; IDs hidden | C-11 |
+| Settings (new in 0.3) | No place to keep the business name, your name or how tenants pay you | One page, three cards: Your business, How tenants pay you, Receipts and rounding; boxes that cannot change (email, currency) say why; a live box shows exactly what a reminder will carry | C-4, C-5, C-11 |
+| Reminder message | Told the tenant the amount but not how to pay | The payment details from Settings are added as "You can pay by:" lines | C-11 |
+| Charges added every month (new in 0.3) | A fixed maintenance or parking amount had to be typed every month | A card on the tenant page lists them with "₹500 a month"; the form says which month it starts and that the rent itself does not change; "Stop" asks for the last month | C-4, C-5, C-9 |
+| Rent still to come (new in 0.3) | No way to see what will be charged next | A card listing the next 12 months with rent, each repeating charge and the total, and a line saying nothing there is charged yet | C-5, C-9, C-10 |
+| Give money back (new in 0.3) | Money could only be returned during move-out | A button that names what is held ("Rent paid ahead · ₹3,000 held"), caps the amount, and says what the balance becomes | C-3, C-5, C-9 |
+| Added by mistake (new in 0.3) | A wrong room record could only be "moved out", which was untrue | A quiet line under the tenant page offers to remove it while no money has been recorded; the form says when to use it and when to use Move out instead | C-5, C-11, C-12 |
 
 ## 5. How to check a new screen
 
@@ -184,6 +190,8 @@ These fit the rules above and are planned. Tick them off as they ship.
 - [ ] **Property row as a portfolio line:** occupied/vacant bar, monthly rent, unpaid.
 - [ ] **Search results name their type:** "Tenant · Room 101", "Room · Green View".
 - [ ] **Undo** for safe, reversible actions (for example "Not leaving any more").
+- [x] **Remove a room record added by mistake** instead of forcing a false move-out. *(0.3)*
+- [x] **Payment details in reminders**, so the tenant can pay without asking how. *(0.3)*
 - [ ] **Recent activity** on the dashboard ("since your last visit").
 - [ ] **Warn about unusual amounts:** "This is much higher than the usual rent of ₹3,500. Continue?"
 - [ ] **Tenant app:** separate, mobile-first and much simpler (V1).

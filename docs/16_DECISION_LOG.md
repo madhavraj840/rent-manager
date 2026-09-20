@@ -390,6 +390,39 @@ Consequences:       One extra table and generated-key pattern
 Affected documents: 01, 05, 10
 ```
 
+```text
+Decision ID:        D-059
+Date:               2026-09-20
+Decision:           Repeating monthly charges are never split for part months
+Status:             PROVISIONAL
+Options considered: prorate like rent for the first and last month; always charge the full amount
+Selected approach:  A repeating charge (maintenance, parking) is added in full on each whole rent month
+                    from the month the owner picks. It is never added for the part month at move-in,
+                    and the month of move-out keeps the full amount.
+Reason:             Maintenance and parking are flat fees in practice, and splitting them produces odd
+                    amounts the landlord then has to explain. Rent stays the only prorated charge.
+Consequences:       A tenant who moves in mid-month pays no maintenance for that part month. If the owner
+                    wants it, they add a one-off charge. Move-out cancels only the months that start
+                    after the leaving date, the same rule as rent.
+Affected documents: 05, 10, 20
+```
+
+```text
+Decision ID:        D-060
+Date:               2026-09-20
+Decision:           A room record can be removed only while no money has been recorded
+Status:             PROVISIONAL
+Options considered: allow a delete at any time; never allow a delete, only move-out; allow it while clean
+Selected approach:  "Added by mistake" sets the record to CANCELLED, frees the room and crosses out the
+                    rent it generated. It is refused as soon as one payment or one refund exists.
+Reason:             A wrong room or wrong person is a common typing mistake, and forcing a move-out would
+                    record something that never happened. Once money has changed hands the record is real
+                    and must survive as history.
+Consequences:       Cancelled records leave every list but stay in Change history. Charges alone do not
+                    block it, because they were made by the app, not by the tenant paying.
+Affected documents: 04, 05, 10, 20
+```
+
 ## Offline, sync and conflicts
 
 ```text
@@ -778,3 +811,4 @@ Affected documents: 06, 15
 | 2026-09-18 | Initial log (D-001…D-055) created from the TO DO LIST answers, idea notes and the owner Q&A of 2026-09-18 |
 | 2026-09-19 | Owner review of 00 §14: D-020, D-025, D-045, D-050 CONFIRMED; D-010 superseded by D-056 (pricing); D-057 added (chat scope) |
 | 2026-09-19 | D-058 added: local embedded database and single local user until the hosting region (D-030) is chosen |
+| 2026-09-20 | D-059 and D-060 added: repeating monthly charges are never split for part months; a room record can be removed only while no money has been recorded |

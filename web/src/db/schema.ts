@@ -228,6 +228,20 @@ export const ledgerEntries = app.table("ledger_entries", {
   uniqueIndex("ledger_generated_uq").on(t.generatedKey).where(sql`${t.generatedKey} is not null`),
 ]);
 
+// A fixed amount added with the rent every month (F-MONEY-10), e.g. maintenance or parking.
+export const recurringCharges = app.table("recurring_charges", {
+  id: id(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  propertyId: uuid("property_id").notNull().references(() => properties.id),
+  tenancyId: uuid("tenancy_id").notNull().references(() => tenancies.id),
+  category: text("category").notNull(),
+  description: text("description").notNull(),
+  amountMinor: money("amount_minor").notNull(),
+  startOn: day("start_on").notNull(),
+  endOn: day("end_on"),
+  ...sync(),
+}, (t) => [index("recurring_tenancy_ix").on(t.tenancyId)]);
+
 export const meters = app.table("meters", {
   id: id(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
@@ -326,3 +340,4 @@ export type LedgerRow = typeof ledgerEntries.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
 export type Meter = typeof meters.$inferSelect;
 export type MeterReading = typeof meterReadings.$inferSelect;
+export type RecurringCharge = typeof recurringCharges.$inferSelect;

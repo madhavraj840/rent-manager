@@ -180,6 +180,10 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 const MONTH = (d: string) => `${MON[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
 const DAYMON = (d: string) => `${Number(d.slice(8))} ${MON[Number(d.slice(5, 7)) - 1]}`;
 
+/** "Sep 2026", or "18 Aug – 31 Aug 2026" when the period is not a whole calendar month. */
+export const periodLabel = (start: string, end: string, cycleDay: number) =>
+  cycleDay === 1 && start.endsWith("-01") ? MONTH(start) : `${DAYMON(start)} – ${DAYMON(end)} ${end.slice(0, 4)}`;
+
 /**
  * Rent charges for every period start in [billingStart, until] (10 §6).
  * `rentAt(s)` returns the rent in force at period start s (latest revision ≤ s).
@@ -204,7 +208,7 @@ export function rentSchedule(opts: {
     const partial = s !== fullStart;
     const cycleDays = daysBetween(fullStart, next);
     const occupied = daysBetween(s, next);
-    const label = c === 1 && !partial ? MONTH(s) : `${DAYMON(s)} – ${DAYMON(end)} ${end.slice(0, 4)}`;
+    const label = partial ? `${DAYMON(s)} – ${DAYMON(end)} ${end.slice(0, 4)}` : periodLabel(s, end, c);
     out.push({
       periodStart: s,
       periodEnd: end,

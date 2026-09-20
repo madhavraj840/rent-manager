@@ -138,6 +138,8 @@ export function paymentContext(v: TenancyView, ctx: Ctx): PaymentContext {
     due: Math.max(v.balance.balance, 0),
     overdue: v.balance.overdue,
     depositDue: Math.max(v.balance.depositDue, 0),
+    advance: Math.max(-v.balance.balance, 0),
+    depositHeld: v.balance.depositHeld,
     open: v.balance.charges
       .filter((c) => c.remaining > 0)
       .map((c) => ({ label: c.entry.description, remaining: c.remaining, amount: c.entry.amount })),

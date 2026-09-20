@@ -8,7 +8,9 @@ import { z } from "zod";
 import { cloudMode, getDb, t } from "@/db";
 import { formatMoney, parseMoney, parseScaled } from "@/lib/money";
 import { unitLabels } from "@/lib/units";
-import { CHARGE_CATEGORIES, CREDIT_CATEGORIES, DOC_CATEGORIES, EXPENSE_CATEGORIES, PERSON_DOCS, PAY_METHODS, PROPERTY_TYPES as PT, UNIT_TYPES as UT } from "@/lib/labels";
+import {
+  CHARGE_CATEGORIES, CREDIT_CATEGORIES, DOC_CATEGORIES, EXPENSE_CATEGORIES, PERSON_DOCS, PAY_METHODS, PROPERTY_TYPES as PT, RECURRING_CATEGORIES, UNIT_TYPES as UT,
+} from "@/lib/labels";
 import * as cmd from "@/server/commands";
 import { getCtx, requireCtx } from "@/server/queries";
 import { authUser, supabaseServer } from "@/server/auth";
@@ -93,6 +95,30 @@ export async function loadSample(): Promise<void> {
   await seedSample(ctx);
   revalidatePath("/", "layout");
   redirect("/dashboard");
+}
+
+// ---------- Settings (SCR-11) ----------
+
+export async function saveSettingsAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const v = z.object({
+      name: str(80).min(2, "A business name needs at least 2 letters"),
+      timeZone: str(60).min(1, "Choose a time zone"),
+      displayName: str(100).min(1, "Enter your name"),
+      receiptPrefix: z.string().trim().max(8, "At most 8 characters").regex(/^[A-Za-z0-9/-]*$/, "Use letters, numbers, - or / only"),
+      upiId: opt(100), accountName: opt(100), accountNumber: opt(40), ifsc: opt(20), bankName: opt(80), payNote: opt(200),
+    }).parse(f);
+    if (!Intl.supportedValuesOf("timeZone").includes(v.timeZone)) throw new FieldError("timeZone", "Choose a time zone from the list");
+    await cmd.updateSettings(ctx, {
+      name: v.name, timeZone: v.timeZone, displayName: v.displayName, receiptPrefix: v.receiptPrefix || "R-",
+      roundToWholeUnits: f.roundToWholeUnits === "on",
+      payTo: { upiId: v.upiId, accountName: v.accountName, accountNumber: v.accountNumber, ifsc: v.ifsc, bankName: v.bankName, note: v.payNote },
+    });
+    revalidatePath("/", "layout");
+    return { ok: "Settings saved", at: Date.now() };
+  });
 }
 
 // ---------- Properties (SCR-22) and units (SCR-24) ----------
@@ -278,6 +304,73 @@ export async function voidEntryAction(_: FormState, fd: FormData): Promise<FormS
     await cmd.voidEntry(ctx, { entryId: f.entryId, reason: str(200).min(1, "Enter a reason").parse(f.reason) });
     revalidatePath("/", "layout");
     return { ok: "Entry cancelled · it stays crossed out under Payments and charges", at: Date.now() };
+  });
+}
+
+export async function refundAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const cur = await tenancyCurrency(f.tenancyId);
+    const account = z.enum(["RENT", "DEPOSIT"], "Choose what you are giving back").parse(f.account);
+    await cmd.refundMoney(ctx, {
+      tenancyId: f.tenancyId,
+      account,
+      amountMinor: money(f.amount, cur, "amount", { required: true, positive: true }),
+      date: date(f.date, "date"),
+      method: METHOD.parse(f.method),
+      note: opt(500).parse(f.note),
+    });
+    revalidatePath("/", "layout");
+    return { ok: `${account === "DEPOSIT" ? "Deposit" : "Advance"} returned · shown under Payments and charges`, at: Date.now() };
+  });
+}
+
+export async function cancelTenancyAction(_: FormState, fd: FormData): Promise<FormState> {
+  const f = form(fd);
+  let back = "/properties";
+  const r = await guard(async () => {
+    const ctx = await requireCtx();
+    const db = await getDb();
+    const [tn] = await db.select({ propertyId: t.tenancies.propertyId }).from(t.tenancies)
+      .where(and(eq(t.tenancies.id, f.tenancyId), eq(t.tenancies.workspaceId, ctx.workspace.id)));
+    if (!tn) throw new FieldError("", "Tenant record not found");
+    await cmd.cancelTenancy(ctx, { tenancyId: f.tenancyId, reason: str(200).min(1, "Enter a reason").parse(f.reason) });
+    back = `/properties/${tn.propertyId}`;
+  });
+  if (r) return r;
+  revalidatePath("/", "layout");
+  redirect(back);
+}
+
+export async function addRecurringAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const cur = await tenancyCurrency(f.tenancyId);
+    const made = await cmd.addRecurringCharge(ctx, {
+      tenancyId: f.tenancyId,
+      category: z.enum(Object.keys(RECURRING_CATEGORIES) as [string, ...string[]], "Choose a type").parse(f.category),
+      description: str(120).min(1, "Enter what the charge is for").parse(f.description),
+      amountMinor: money(f.amount, cur, "amount", { required: true, positive: true }),
+      startOn: date(f.startOn, "startOn"),
+      endOn: f.endOn?.trim() ? date(f.endOn, "endOn") : undefined,
+    });
+    revalidatePath("/", "layout");
+    return {
+      ok: made ? `Monthly charge saved · ${made} ${made === 1 ? "month" : "months"} added now` : "Monthly charge saved · it starts from the month you chose",
+      at: Date.now(),
+    };
+  });
+}
+
+export async function stopRecurringAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    await cmd.stopRecurringCharge(ctx, { id: f.id, endOn: date(f.endOn, "endOn") });
+    revalidatePath("/", "layout");
+    return { ok: "Stopped · no new months will be charged after that date", at: Date.now() };
   });
 }
 

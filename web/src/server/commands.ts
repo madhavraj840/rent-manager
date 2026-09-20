@@ -3,10 +3,10 @@ import { and, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { getDb, t, type DB } from "@/db";
 import { putFile, removeFiles } from "./files";
 import {
-  addDays, allocate, formatMoney, formatScaled, moveOutCredit, nextPeriodStart, parseScaled, periodStartFor, rentSchedule, roundingUnit,
+  addDays, allocate, formatMoney, formatScaled, moveOutCredit, nextPeriodStart, parseScaled, periodLabel, periodStartFor, rentSchedule, roundingUnit,
   utilityAmount, utilityDescription, type LedgerEntry,
 } from "@/lib/money";
-import { CREDIT_CATEGORIES, PERSON_DOCS } from "@/lib/labels";
+import { CREDIT_CATEGORIES, PERSON_DOCS, type PayTo } from "@/lib/labels";
 
 // Every write goes through run(): one transaction, workspace change sequence, version stamping, audit (06 §6).
 
@@ -98,6 +98,28 @@ export interface PropertyInput {
   countryCode: string; currency: string; notes?: string;
 }
 
+/** SCR-11 Settings: business name, time zone, receipts, rounding, your display name and how tenants pay you. */
+export function updateSettings(ctx: Ctx, input: {
+  name: string; timeZone: string; receiptPrefix: string; roundToWholeUnits: boolean; displayName: string; payTo: PayTo;
+}) {
+  return run(ctx, "workspace.update", "workspace", async (tx) => {
+    const has = Object.values(input.payTo).some((v) => v);
+    const after = {
+      name: input.name, timeZone: input.timeZone, receiptPrefix: input.receiptPrefix,
+      roundToWholeUnits: input.roundToWholeUnits, paymentInstructions: has ? input.payTo : null,
+    };
+    await tx.update(t.workspaces).set({ ...after, updatedBy: ctx.userId }).where(eq(t.workspaces.id, ctx.workspace.id));
+    await tx.update(t.memberships).set({ displayName: input.displayName, updatedBy: ctx.userId })
+      .where(and(eq(t.memberships.workspaceId, ctx.workspace.id), eq(t.memberships.userId, ctx.userId)));
+    const w = ctx.workspace;
+    return {
+      entityId: ctx.workspace.id,
+      changes: { before: { name: w.name, timeZone: w.timeZone, receiptPrefix: w.receiptPrefix, roundToWholeUnits: w.roundToWholeUnits }, after },
+      result: ctx.workspace.id,
+    };
+  });
+}
+
 export function createProperty(ctx: Ctx, input: PropertyInput) {
   return run(ctx, "property.create", "property", async (tx) => {
     const [p] = await tx.insert(t.properties).values({ ...input, workspaceId: ctx.workspace.id, createdBy: ctx.userId }).returning();
@@ -182,6 +204,37 @@ function entry(ctx: Ctx, tn: typeof t.tenancies.$inferSelect, e: NewEntry) {
   return { createdBy: ctx.userId || null, ...e, workspaceId: ctx.workspace.id, propertyId: tn.propertyId, tenancyId: tn.id, currency: tn.currency };
 }
 
+/**
+ * Repeating monthly charges (F-MONEY-10): one charge per whole rent month from the start month.
+ * Idempotent by generated_key, so adding one later fills in the months already gone by.
+ */
+async function generateExtras(tx: Tx, ctx: Ctx, tn: typeof t.tenancies.$inferSelect, until: string) {
+  const list = await tx.select().from(t.recurringCharges)
+    .where(and(eq(t.recurringCharges.tenancyId, tn.id), isNull(t.recurringCharges.deletedAt)));
+  if (!list.length) return 0;
+  const end = tn.movedOutOn ?? tn.plannedMoveOutDate;
+  const limit = end && end < until ? end : until;
+  const lines: NewEntry[] = [];
+  for (const rc of list) {
+    const stop = rc.endOn && rc.endOn < limit ? rc.endOn : limit;
+    // Whole rent months only: a charge never starts before rent does.
+    let s = periodStartFor(rc.startOn, tn.cycleDay);
+    while (s < tn.billingStartDate) s = nextPeriodStart(s, tn.cycleDay);
+    for (; s <= stop; s = nextPeriodStart(s, tn.cycleDay)) {
+      const periodEnd = addDays(nextPeriodStart(s, tn.cycleDay), -1);
+      lines.push({
+        kind: "CHARGE", account: "RENT", category: rc.category, amountMinor: rc.amountMinor,
+        entryDate: s, dueDate: addDays(s, tn.graceDays), periodStart: s, periodEnd,
+        description: `${rc.description} · ${periodLabel(s, periodEnd, tn.cycleDay)}`,
+        source: "AUTO", generatedKey: `extra:${rc.id}:${s}`,
+      });
+    }
+  }
+  if (!lines.length) return 0;
+  const inserted = await tx.insert(t.ledgerEntries).values(lines.map((l) => entry(ctx, tn, l))).onConflictDoNothing().returning({ id: t.ledgerEntries.id });
+  return inserted.length;
+}
+
 /** Rent charges for every period start up to `until` that don't exist yet (10 §6). Idempotent by generated_key. */
 async function generateRent(tx: Tx, ctx: Ctx, tn: typeof t.tenancies.$inferSelect, until: string) {
   const end = tn.movedOutOn ?? tn.plannedMoveOutDate;
@@ -193,7 +246,7 @@ async function generateRent(tx: Tx, ctx: Ctx, tn: typeof t.tenancies.$inferSelec
     unit: roundingUnit(tn.currency, ctx.workspace.roundToWholeUnits),
     rentAt: (s) => (sorted.find((r) => r.effectiveFrom <= s) ?? sorted[sorted.length - 1]).rentMinor,
   });
-  if (!plan.length) return 0;
+  if (!plan.length) return generateExtras(tx, ctx, tn, limit);
   const inserted = await tx
     .insert(t.ledgerEntries)
     .values(plan.map((c) => entry(ctx, tn, {
@@ -202,7 +255,7 @@ async function generateRent(tx: Tx, ctx: Ctx, tn: typeof t.tenancies.$inferSelec
     })))
     .onConflictDoNothing()
     .returning({ id: t.ledgerEntries.id });
-  return inserted.length;
+  return inserted.length + (await generateExtras(tx, ctx, tn, limit));
 }
 
 /**
@@ -220,11 +273,19 @@ export async function generateDueCharges(ctx: Ctx) {
     (await db.select({ k: t.ledgerEntries.generatedKey }).from(t.ledgerEntries)
       .where(and(eq(t.ledgerEntries.workspaceId, ctx.workspace.id), eq(t.ledgerEntries.source, "AUTO")))).map((r) => r.k),
   );
+  const extras = await db.select().from(t.recurringCharges)
+    .where(and(eq(t.recurringCharges.workspaceId, ctx.workspace.id), isNull(t.recurringCharges.deletedAt)));
   const due = active.filter((tn) => {
-    let s = tn.billingStartDate;
     const end = tn.movedOutOn ?? tn.plannedMoveOutDate;
     const limit = end && end < ctx.today ? end : ctx.today;
+    let s = tn.billingStartDate;
     for (; s <= limit; s = nextPeriodStart(periodStartFor(s, tn.cycleDay), tn.cycleDay)) if (!keys.has(`rent:${tn.id}:${s}`)) return true;
+    for (const rc of extras.filter((x) => x.tenancyId === tn.id)) {
+      const stop = rc.endOn && rc.endOn < limit ? rc.endOn : limit;
+      let p = periodStartFor(rc.startOn, tn.cycleDay);
+      while (p < tn.billingStartDate) p = nextPeriodStart(p, tn.cycleDay);
+      for (; p <= stop; p = nextPeriodStart(p, tn.cycleDay)) if (!keys.has(`extra:${rc.id}:${p}`)) return true;
+    }
     return false;
   });
   if (due.length) {
@@ -401,6 +462,85 @@ export function voidEntry(ctx: Ctx, input: { entryId: string; reason: string }) 
   });
 }
 
+// ---------- Repeating monthly charges (F-MONEY-10) ----------
+
+export function addRecurringCharge(ctx: Ctx, input: {
+  tenancyId: string; category: string; description: string; amountMinor: number; startOn: string; endOn?: string;
+}) {
+  return run(ctx, "recurring.add", "recurring_charge", async (tx) => {
+    const tn = await loadTenancy(tx, ctx, input.tenancyId);
+    if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This tenant has already moved out.");
+    if (input.amountMinor <= 0) throw new DomainError("VALIDATION", "Enter an amount.", "amount");
+    if (input.endOn && input.endOn < input.startOn) throw new DomainError("VALIDATION", "The last month can't be before the first month.", "endOn");
+    if (input.startOn > addDays(ctx.today, 366)) throw new DomainError("VALIDATION", "That first month is too far ahead.", "startOn");
+    const [rc] = await tx.insert(t.recurringCharges).values({
+      workspaceId: ctx.workspace.id, propertyId: tn.propertyId, tenancyId: tn.id, category: input.category,
+      description: input.description, amountMinor: input.amountMinor, startOn: input.startOn, endOn: input.endOn ?? null, createdBy: ctx.userId,
+    }).returning();
+    const made = await generateExtras(tx, ctx, tn, ctx.today);
+    return { entityId: rc.id, changes: { ...input, chargesMade: made }, result: made };
+  });
+}
+
+/** Stop a repeating charge from a date on. Charges already made stay; cancel them one by one if they are wrong. */
+export function stopRecurringCharge(ctx: Ctx, input: { id: string; endOn: string }) {
+  return run(ctx, "recurring.stop", "recurring_charge", async (tx) => {
+    const [rc] = await tx.select().from(t.recurringCharges)
+      .where(and(eq(t.recurringCharges.id, input.id), eq(t.recurringCharges.workspaceId, ctx.workspace.id), isNull(t.recurringCharges.deletedAt)));
+    if (!rc) throw new DomainError("NOT_FOUND", "That repeating charge was not found.");
+    if (input.endOn < rc.startOn) throw new DomainError("VALIDATION", `It can't stop before it starts (${niceDate(rc.startOn)}).`, "endOn");
+    await tx.update(t.recurringCharges).set({ endOn: input.endOn, updatedBy: ctx.userId }).where(eq(t.recurringCharges.id, rc.id));
+    return { entityId: rc.id, changes: { before: { endOn: rc.endOn }, after: { endOn: input.endOn } }, result: rc.id };
+  });
+}
+
+/** Give money back while the tenant is still on the books: advance paid ahead, or deposit held. */
+export function refundMoney(ctx: Ctx, input: { tenancyId: string; account: "RENT" | "DEPOSIT"; amountMinor: number; date: string; method: string; note?: string }) {
+  return run(ctx, "refund.record", "tenancy", async (tx) => {
+    const tn = await loadTenancy(tx, ctx, input.tenancyId);
+    assertOpen(tn);
+    if (input.amountMinor <= 0) throw new DomainError("VALIDATION", "Enter an amount.", "amount");
+    if (input.date > addDays(ctx.today, 1)) throw new DomainError("DATE_OUT_OF_RANGE", "The date can't be in the future.", "date");
+    const bal = await balanceOf(tx, tn.id, ctx.today);
+    const most = input.account === "DEPOSIT" ? bal.depositHeld : Math.max(-bal.balance, 0);
+    const what = input.account === "DEPOSIT" ? "deposit you hold" : "advance the tenant has paid ahead";
+    if (most <= 0) throw new DomainError("NOTHING_TO_REFUND", `There is no ${what} to give back.`, "amount");
+    if (input.amountMinor > most)
+      throw new DomainError("REFUND_EXCEEDS_HELD", `Only ${formatMoney(most, tn.currency)} can be given back. That is the ${what}.`, "amount");
+    await tx.insert(t.ledgerEntries).values(entry(ctx, tn, {
+      kind: "REFUND", account: input.account, amountMinor: input.amountMinor, entryDate: input.date, method: input.method, note: input.note || null,
+      description: input.account === "DEPOSIT" ? "Deposit returned" : "Advance returned",
+    }));
+    await closeIfSettled(tx, ctx, tn);
+    return { entityId: tn.id, changes: input, result: tn.id };
+  });
+}
+
+/**
+ * Undo a room record added by mistake (F-TNCY-9). Only while no money has been received or given back:
+ * the room goes free again and every charge it made is crossed out.
+ */
+export function cancelTenancy(ctx: Ctx, input: { tenancyId: string; reason: string }) {
+  return run(ctx, "tenancy.cancel", "tenancy", async (tx) => {
+    const tn = await loadTenancy(tx, ctx, input.tenancyId);
+    if (tn.status !== "ACTIVE") throw new DomainError("TENANCY_CLOSED", "This record can no longer be undone. Use Move out instead.");
+    const rows = await tx.select().from(t.ledgerEntries).where(eq(t.ledgerEntries.tenancyId, tn.id));
+    const active = rows.filter((r) => r.status === "ACTIVE");
+    const paid = active.filter((r) => r.kind === "PAYMENT" || r.kind === "REFUND");
+    if (paid.length)
+      throw new DomainError(
+        "TENANCY_HAS_MONEY",
+        `Money has already been recorded here (${paid.length} ${paid.length === 1 ? "entry" : "entries"}). Cancel those entries first, or use Move out instead.`,
+      );
+    if (active.length)
+      await tx.update(t.ledgerEntries).set({ status: "VOID", voidReason: "Room record was added by mistake", voidedAt: sql`now()`, voidedBy: ctx.userId })
+        .where(inArray(t.ledgerEntries.id, active.map((r) => r.id)));
+    await tx.update(t.tenancies).set({ status: "CANCELLED", cancelledAt: sql`now()` as unknown as string, cancelReason: input.reason, updatedBy: ctx.userId })
+      .where(eq(t.tenancies.id, tn.id));
+    return { entityId: tn.id, changes: { reason: input.reason, chargesCancelled: active.length }, result: tn.id };
+  });
+}
+
 // ---------- Move-out settlement (10 §10) ----------
 
 export interface Deduction { category: "DAMAGE" | "CLEANING" | "OTHER"; amountMinor: number; reason: string }
@@ -412,8 +552,10 @@ export async function settlementPreview(ctx: Ctx, tenancyId: string, moveOut: st
   if (!tn) throw new DomainError("NOT_FOUND", "Tenant record not found.");
   const rows = (await db.select().from(t.ledgerEntries).where(eq(t.ledgerEntries.tenancyId, tn.id))).filter((r) => r.status === "ACTIVE");
   const unit = roundingUnit(tn.currency, ctx.workspace.roundToWholeUnits);
-  const rent = rows.filter((r) => r.kind === "CHARGE" && r.category === "RENT" && r.source === "AUTO" && r.periodStart);
-  const voids = rent.filter((r) => r.periodStart! > moveOut);
+  // Anything the app charges by itself — rent and the repeating monthly charges — stops after the move-out date.
+  const auto = rows.filter((r) => r.kind === "CHARGE" && r.source === "AUTO" && r.periodStart);
+  const rent = auto.filter((r) => r.category === "RENT");
+  const voids = auto.filter((r) => r.periodStart! > moveOut);
   const proration = rent
     .filter((r) => r.periodStart! <= moveOut && r.periodEnd! > moveOut)
     .map((r) => ({ chargeId: r.id, description: r.description ?? "Rent", credit: moveOutCredit(r.amountMinor, r.periodStart!, moveOut, tn.cycleDay, unit) }))

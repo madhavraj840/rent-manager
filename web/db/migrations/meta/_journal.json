@@ -64,6 +64,20 @@
       "when": 1789849394038,
       "tag": "0008_lock_down",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789885400432,
+      "tag": "0009_recurring",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789885413207,
+      "tag": "0010_recurring_rules",
+      "breakpoints": true
     }
   ]
 }
