@@ -281,7 +281,10 @@ export default async function TenancyPage({ params }: PageProps<"/tenancies/[id]
             {v.people.map((p, i) => (
               <li key={p.id} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{p.fullName}{v.people.length > 1 && <span className="font-normal text-fg-2"> · {i === 0 ? "main tenant" : "co-tenant"}</span>}</span>
+                  <span className="font-medium">
+                    <Link href={`/tenants/${p.id}`} className={linkClass}>{p.fullName}</Link>
+                    {v.people.length > 1 && <span className="font-normal text-fg-2"> · {i === 0 ? "main tenant" : "co-tenant"}</span>}
+                  </span>
                   {tn.status !== "CLOSED" && <EditTenant t={p} />}
                 </div>
                 <div className="num text-[13px] text-fg-2">

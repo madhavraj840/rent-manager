@@ -3,13 +3,15 @@ import Link from "next/link";
 import { loadPortfolio } from "@/server/queries";
 import { PROPERTY_TYPES, label } from "@/lib/labels";
 import { Card, Chevron, Empty, PageHeader, buttonClass, money } from "@/components/ui";
+import { PutAway } from "@/components/keep-actions";
 
 export const metadata: Metadata = { title: "Properties" };
 
 // SCR-20 Property list
 export default async function PropertiesPage() {
   const { properties, units, current } = await loadPortfolio();
-  const rows = properties.map((p) => {
+  const away = properties.filter((p) => p.archivedAt);
+  const rows = properties.filter((p) => !p.archivedAt).map((p) => {
     const pv = current.filter((v) => v.property.id === p.id);
     return {
       p,
@@ -23,7 +25,7 @@ export default async function PropertiesPage() {
 
   return (
     <>
-      <PageHeader title="Properties" sub={`${properties.length} properties · ${units.length} rooms`} actions={add} />
+      <PageHeader title="Properties" sub={`${rows.length} properties · ${units.filter((u) => !u.archivedAt).length} rooms`} actions={add} />
       <Card>
         {!rows.length ? (
           <Empty action={add}>No properties yet. Add your first building or house.</Empty>
@@ -66,6 +68,25 @@ export default async function PropertiesPage() {
           </div>
         )}
       </Card>
+
+      {away.length > 0 && (
+        <Card title={`Put away (${away.length})`} className="mt-6">
+          <p className="border-b border-line px-4 py-2.5 text-[13px] text-fg-2">
+            These are out of your everyday lists. Nothing has been deleted. Bring one back to use it again.
+          </p>
+          <ul className="divide-y divide-line text-sm">
+            {away.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3">
+                <Link href={`/properties/${p.id}`} className="font-medium hover:underline">{p.name}</Link>
+                <span className="text-[13px] text-fg-2">
+                  {units.filter((u) => u.propertyId === p.id).length} rooms
+                  {" "}<PutAway kind="PROPERTY" id={p.id} name={p.name} away />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </>
   );
 }

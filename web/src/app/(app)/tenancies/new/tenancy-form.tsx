@@ -20,6 +20,9 @@ export function TenancyForm({ units, tenants, today, roundWhole, initialUnit }: 
   const cur = unit.currency;
   const [existing, setExisting] = useState(false);
   const [who, setWho] = useState<"new" | "existing">("new");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [tenantId, setTenantId] = useState("");
   const [startDate, setStartDate] = useState(today);
   const [rent, setRent] = useState(major(unit.rent, cur));
   const [deposit, setDeposit] = useState(major(unit.deposit, cur));
@@ -42,6 +45,13 @@ export function TenancyForm({ units, tenants, today, roundWhole, initialUnit }: 
         unit: roundingUnit(cur, roundWhole), rentAt: () => rentMinor,
       }).slice(0, 4)
     : [];
+
+  // F-TNCY-10: the same person entered twice is the easiest mistake to make, so say so before saving.
+  const digits = (x: string) => x.replace(/\D/g, "");
+  const samePhone = digits(phone).length >= 6 ? tenants.filter((x) => digits(x.phone) && digits(x.phone) === digits(phone)) : [];
+  const sameName = name.trim().length >= 3 ? tenants.filter((x) => x.name.trim().toLowerCase() === name.trim().toLowerCase() && !samePhone.includes(x)) : [];
+  const already = [...samePhone, ...sameName];
+  const pickExisting = (id: string) => { setTenantId(id); setWho("existing"); };
 
   const pickUnit = (id: string) => {
     const u = units.find((x) => x.id === id)!;
@@ -85,14 +95,38 @@ export function TenancyForm({ units, tenants, today, roundWhole, initialUnit }: 
             <label className="flex items-center gap-2"><input type="radio" checked={who === "existing"} onChange={() => setWho("existing")} disabled={!tenants.length} className="accent-[var(--primary)]" /> Someone already added</label>
           </div>
           {who === "existing" ? (
-            <Select name="tenantId" defaultValue={tenants[0]?.id}>
+            <Select name="tenantId" value={tenantId || tenants[0]?.id} onChange={(e) => setTenantId(e.target.value)}>
               {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}{t.phone ? ` · ${t.phone}` : ""}</option>)}
             </Select>
           ) : (
             <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Full name" name="fullName" state={state} className="sm:col-span-3"><Input name="fullName" state={state} required maxLength={120} autoComplete="off" /></Field>
-              <Field label="Phone" name="phone" state={state} className="sm:col-span-1"><Input name="phone" state={state} type="tel" maxLength={30} placeholder="+91 98450 12345" /></Field>
+              <Field label="Full name" name="fullName" state={state} className="sm:col-span-3">
+                <Input name="fullName" state={state} value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} autoComplete="off" />
+              </Field>
+              <Field label="Phone" name="phone" state={state} className="sm:col-span-1">
+                <Input name="phone" state={state} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={30} placeholder="+91 98450 12345" />
+              </Field>
               <Field label="Email (optional)" name="email" state={state} className="sm:col-span-2"><Input name="email" state={state} type="email" /></Field>
+              {already.length > 0 && (
+                <div role="status" className="rounded-md border border-due/40 bg-due-soft px-3 py-2 text-sm text-due sm:col-span-3">
+                  <p className="font-medium">
+                    {samePhone.length
+                      ? `That phone number already belongs to ${samePhone.map((x) => x.name).join(" and ")}.`
+                      : `${already[0].name} is already in your list${already[0].phone ? ` (${already[0].phone})` : ""}.`}
+                  </p>
+                  <p className="mt-0.5">
+                    Saving now makes a second person with the same details. If it is the same person, use the one you already have:
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    {already.map((x) => (
+                      <button key={x.id} type="button" onClick={() => pickExisting(x.id)}
+                        className="h-8 rounded-md border border-due/50 bg-surface px-2.5 text-[13px] font-medium text-due hover:bg-due-soft">
+                        Use {x.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </fieldset>

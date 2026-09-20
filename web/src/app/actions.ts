@@ -236,6 +236,45 @@ export async function startTenancyAction(_: FormState, fd: FormData): Promise<Fo
   redirect(`/tenancies/${id}`);
 }
 
+// ---------- Put away and delete for good (F-DATA-1) ----------
+
+const THINGS = z.enum(["PROPERTY", "ROOM", "TENANT"]);
+const THING_WORD = { PROPERTY: "Property", ROOM: "Room", TENANT: "Tenant" } as const;
+
+export async function putAwayAction(_: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const ctx = await requireCtx();
+    const f = form(fd);
+    const kind = THINGS.parse(f.kind);
+    const away = f.away === "yes";
+    await cmd.setPutAway(ctx, { kind, id: f.id, away });
+    revalidatePath("/", "layout");
+    return {
+      ok: away
+        ? `${THING_WORD[kind]} put away · find it under "Put away" and bring it back any time`
+        : `${THING_WORD[kind]} brought back · it is in your lists again`,
+      at: Date.now(),
+    };
+  });
+}
+
+export async function deleteThingAction(_: FormState, fd: FormData): Promise<FormState> {
+  const f = form(fd);
+  const kind = THINGS.safeParse(f.kind).data;
+  if (!kind) return { error: "Choose what to delete" };
+  const r = await guard(async () => {
+    const ctx = await requireCtx();
+    if (str(200).min(1).parse(f.confirm).trim().toLowerCase() !== "delete")
+      throw new FieldError("confirm", 'Type the word delete to confirm');
+    await cmd.deleteForGood(ctx, { kind, id: f.id });
+  });
+  if (r) return r;
+  revalidatePath("/", "layout");
+  if (kind === "PROPERTY") redirect("/properties");
+  if (kind === "TENANT") redirect("/tenants");
+  return { ok: "Room deleted for good", at: Date.now() };
+}
+
 // ---------- Money (SCR-43…47) ----------
 
 const METHOD = z.enum(PAY_METHODS, "Choose a method");
@@ -693,6 +732,22 @@ export async function sendCodeAction(_: FormState, fd: FormData): Promise<FormSt
     }
     return { ok: `We sent an email to ${email}. It can take a minute to arrive.`, at: Date.now() };
   });
+}
+
+/** Sign in with a Google account (F-AUTH-4). Shown only when NEXT_PUBLIC_GOOGLE_SIGN_IN is on. */
+export async function signInWithGoogleAction() {
+  if (!cloudMode()) redirect("/dashboard");
+  const h = await headers();
+  const origin = `${h.get("x-forwarded-proto") ?? "http"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
+  const { data, error } = await (await supabaseServer()).auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: `${origin}/auth/callback` },
+  });
+  if (error || !data?.url) {
+    console.error("google sign-in:", error?.status, error?.code);
+    redirect("/login?link=failed");
+  }
+  redirect(data.url);
 }
 
 export async function verifyCodeAction(_: FormState, fd: FormData): Promise<FormState> {

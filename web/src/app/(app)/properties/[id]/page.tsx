@@ -6,6 +6,7 @@ import { DocumentsCard } from "@/components/documents";
 import { MetersCard } from "@/components/meters";
 import { PROPERTY_TYPES, UNIT_TYPES, label } from "@/lib/labels";
 import { Card, Chevron, Chip, Crumbs, Empty, PageHeader, TenancyStatus, buttonClass, linkClass, money, shortDate } from "@/components/ui";
+import { DeleteForGood, PutAway } from "@/components/keep-actions";
 
 export const metadata: Metadata = { title: "Property" };
 
@@ -20,7 +21,9 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
   const current = pv.filter((v) => v.tenancy.status === "ACTIVE");
   const past = pv.filter((v) => v.tenancy.status !== "ACTIVE");
   const s = monthSummary(current, ctx.today.slice(0, 7));
-  const pu = units.filter((u) => u.propertyId === p.id);
+  const allRooms = units.filter((u) => u.propertyId === p.id);
+  const pu = allRooms.filter((u) => !u.archivedAt);
+  const everLet = new Set(pv.map((v) => v.unit.id));
   const spent = expensesIn(portfolio, ctx.today.slice(0, 7), p.currency, p.id);
   const addUnits = <Link href={`/properties/${p.id}/units`} className={buttonClass.primary}>Add rooms</Link>;
 
@@ -96,6 +99,37 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
         <DocumentsCard docs={await documentsFor([{ type: "PROPERTY", ids: [p.id] }])} target={{ entityType: "PROPERTY", entityId: p.id, where: p.name }} />
       </div>
 
+      {allRooms.length > 0 && (
+        <details className="mt-6 rounded-lg border border-line bg-surface">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium">Put rooms away, or delete ones added by mistake</summary>
+          <p className="border-t border-line px-4 py-2.5 text-[13px] text-fg-2">
+            Putting a room away keeps everything and only hides it from your lists and from &quot;Add tenant&quot;.
+            A room can be deleted only while no tenant has ever been in it.
+          </p>
+          <ul className="divide-y divide-line border-t border-line text-sm">
+            {allRooms.map((u) => {
+              const let_ = current.some((v) => v.unit.id === u.id);
+              return (
+                <li key={u.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5">
+                  <span className={u.archivedAt ? "text-fg-2" : ""}>
+                    {u.label}
+                    <span className="text-[13px] text-fg-2">
+                      {" · "}
+                      {let_ ? "has a tenant now" : u.archivedAt ? "put away" : everLet.has(u.id) ? "empty, has had tenants" : "empty, never used"}
+                    </span>
+                  </span>
+                  <span className="flex flex-wrap items-center gap-1">
+                    {!let_ && <PutAway kind="ROOM" id={u.id} name={u.label} away={!!u.archivedAt} />}
+                    {!let_ && !everLet.has(u.id) && <DeleteForGood kind="ROOM" id={u.id} name={u.label} />}
+                    {let_ && <span className="text-[13px] text-fg-2">Move the tenant out first</span>}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      )}
+
       {past.length > 0 && (
         <Card title="Past tenants" className="mt-6">
           <ul className="divide-y divide-line text-sm">
@@ -113,6 +147,12 @@ export default async function PropertyPage({ params }: PageProps<"/properties/[i
           </ul>
         </Card>
       )}
+      <div className="mt-6 flex flex-wrap items-center gap-1 text-[13px] text-fg-2">
+        Finished with {p.name}?
+        {current.length
+          ? " Move its tenants out first, then you can put it away."
+          : <><PutAway kind="PROPERTY" id={p.id} name={p.name} away={!!p.archivedAt} />{!pv.length && <DeleteForGood kind="PROPERTY" id={p.id} name={p.name} />}</>}
+      </div>
     </>
   );
 }

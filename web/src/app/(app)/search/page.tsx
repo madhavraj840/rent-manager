@@ -40,7 +40,7 @@ export default async function SearchPage({ searchParams }: PageProps<"/search">)
           <Group title="Tenants">
             {tenantHits.map((t) => {
               const v = tenancyOf(t.id);
-              return <Hit key={t.id} href={v ? `/tenancies/${v.tenancy.id}` : "/tenants"} title={t.fullName} sub={[t.phone, v && `${v.unit.label} · ${v.property.name}`].filter(Boolean).join(" · ")} />;
+              return <Hit key={t.id} href={v ? `/tenancies/${v.tenancy.id}` : `/tenants/${t.id}`} title={t.fullName} sub={[t.phone, v && `${v.unit.label} · ${v.property.name}`].filter(Boolean).join(" · ")} />;
             })}
           </Group>
         )}

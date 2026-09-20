@@ -100,6 +100,15 @@ Only record what was seen in the code or confirmed by a test. Mark guesses **ASS
 - **Correct approach:** cancel every `source = 'AUTO'` charge whose period starts after the leaving date, and prorate only rent.
 - **How to find more:** grep for `source === "AUTO"` and check each place treats all generated charges alike.
 
+### A list built from another list drops rows that have none
+- **What happened (2026-09-20):** the Tenants page built its rows from tenancies, so a person with no room — a co-tenant whose record was cancelled, or someone added and never placed — appeared nowhere and could never be reached or removed.
+- **Correct approach:** build the list from the people, then attach the room if there is one, and show "Not in a room" when there isn't.
+- **How to find more:** look for `flatMap` over one table that returns `[]` when a lookup in another table misses.
+
+### A UI guard and its server guard must agree
+- **What happened (2026-09-20):** the tenant page offered "Delete for good" because `loadPortfolio` hides cancelled records, while the server counted the same cancelled record as history and refused.
+- **Correct approach:** when the button's condition and the command's check read different data, write the same rule in both. Here both now ignore `status = 'CANCELLED'`.
+
 ### Circular import between `ui.tsx` and the action components
 - **Correct approach:** shared form pieces (`Outcome`, `Field`) live in `components/form.tsx`, not `ui.tsx`.
 

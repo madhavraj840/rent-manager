@@ -423,6 +423,24 @@ Consequences:       Cancelled records leave every list but stay in Change histor
 Affected documents: 04, 05, 10, 20
 ```
 
+```text
+Decision ID:        D-061
+Date:               2026-09-20
+Decision:           Put away is the normal way to retire a property, room or person; delete is rare
+Status:             PROVISIONAL
+Options considered: only delete; only archive; archive always and delete while the record is clean
+Selected approach:  "Put away" sets archived_at: the record leaves the everyday lists and the pickers and
+                    keeps everything. "Delete for good" sets deleted_at and is refused as soon as
+                    anything hangs off the record (a tenancy ever, an expense, a meter, a document).
+                    A room record cancelled as a mistake does not count as history.
+Reason:             A landlord needs short lists, but no money record may ever disappear. Refusing the
+                    delete and offering put away in the same message teaches the difference once.
+Consequences:       Deleting a property also deletes its empty rooms. Put-away records still appear in
+                    reports for the periods they were active, because their money entries are untouched.
+                    Nothing can be put away while a tenant is in it.
+Affected documents: 04, 05, 09, 20
+```
+
 ## Offline, sync and conflicts
 
 ```text
@@ -811,4 +829,5 @@ Affected documents: 06, 15
 | 2026-09-18 | Initial log (D-001…D-055) created from the TO DO LIST answers, idea notes and the owner Q&A of 2026-09-18 |
 | 2026-09-19 | Owner review of 00 §14: D-020, D-025, D-045, D-050 CONFIRMED; D-010 superseded by D-056 (pricing); D-057 added (chat scope) |
 | 2026-09-19 | D-058 added: local embedded database and single local user until the hosting region (D-030) is chosen |
+| 2026-09-20 | D-061 added: put away is the normal way to retire a record, delete only while it is clean |
 | 2026-09-20 | D-059 and D-060 added: repeating monthly charges are never split for part months; a room record can be removed only while no money has been recorded |

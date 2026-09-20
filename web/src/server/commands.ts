@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lt, ne, sql } from "drizzle-orm";
 import { getDb, t, type DB } from "@/db";
 import { putFile, removeFiles } from "./files";
 import {
@@ -377,6 +377,93 @@ export function startTenancy(ctx: Ctx, input: StartTenancyInput) {
 
     await generateRent(tx, ctx, tn, ctx.today);
     return { entityId: tn.id, changes: { unit: unit.label, rent: input.rentMinor }, result: tn.id };
+  });
+}
+
+// ---------- Put away and delete for good (F-DATA-1) ----------
+
+export type Thing = "PROPERTY" | "ROOM" | "TENANT";
+const TABLE = { PROPERTY: t.properties, ROOM: t.units, TENANT: t.tenants } as const;
+const NAME = { PROPERTY: "property", ROOM: "room", TENANT: "tenant" } as const;
+
+async function loadThing(tx: Tx, ctx: Ctx, kind: Thing, id: string) {
+  const table = TABLE[kind];
+  const [row] = await tx.select().from(table).where(and(eq(table.id, id), eq(table.workspaceId, ctx.workspace.id), isNull(table.deletedAt)));
+  if (!row) throw new DomainError("NOT_FOUND", `That ${NAME[kind]} was not found.`);
+  return row as { id: string; archivedAt: string | null };
+}
+
+/** Rooms still being rented, which stop a property, a room or a person from being put away. */
+async function inUse(tx: Tx, ctx: Ctx, kind: Thing, id: string) {
+  const live = and(eq(t.tenancies.workspaceId, ctx.workspace.id), eq(t.tenancies.status, "ACTIVE"), isNull(t.tenancies.deletedAt));
+  if (kind === "TENANT") {
+    const rows = await tx.select({ id: t.tenancies.id }).from(t.tenancies)
+      .innerJoin(t.tenancyParties, and(eq(t.tenancyParties.tenancyId, t.tenancies.id), isNull(t.tenancyParties.deletedAt)))
+      .where(and(live, eq(t.tenancyParties.tenantId, id)));
+    return rows.length;
+  }
+  const where = kind === "PROPERTY" ? eq(t.tenancies.propertyId, id) : eq(t.tenancies.unitId, id);
+  return (await tx.select({ id: t.tenancies.id }).from(t.tenancies).where(and(live, where))).length;
+}
+
+/** Put a property, room or person away so it leaves the everyday lists. Nothing is lost. */
+export function setPutAway(ctx: Ctx, input: { kind: Thing; id: string; away: boolean }) {
+  return run(ctx, input.away ? "thing.put_away" : "thing.bring_back", NAME[input.kind], async (tx) => {
+    const row = await loadThing(tx, ctx, input.kind, input.id);
+    if (input.away && (await inUse(tx, ctx, input.kind, input.id)))
+      throw new DomainError(
+        "IN_USE",
+        input.kind === "TENANT"
+          ? "This person is renting a room right now. Move them out first, then put them away."
+          : `This ${NAME[input.kind]} still has a tenant. Move them out first, then put it away.`,
+      );
+    const table = TABLE[input.kind];
+    await tx.update(table).set({ archivedAt: input.away ? (sql`now()` as unknown as string) : null, updatedBy: ctx.userId }).where(eq(table.id, row.id));
+    return { entityId: row.id, changes: { kind: input.kind, putAway: input.away }, result: row.id };
+  });
+}
+
+/**
+ * Delete for good. Only when nothing hangs off it, so no money record can ever disappear.
+ * Anything with history can be put away instead.
+ */
+export function deleteForGood(ctx: Ctx, input: { kind: Thing; id: string }) {
+  return run(ctx, "thing.delete", NAME[input.kind], async (tx) => {
+    const row = await loadThing(tx, ctx, input.kind, input.id);
+    const ws = ctx.workspace.id;
+    const count = async (rows: Promise<unknown[]>) => (await rows).length;
+    const stop = (what: string) =>
+      new DomainError("HAS_HISTORY", `This ${NAME[input.kind]} cannot be deleted because it has ${what}. Put it away instead: nothing is lost and it leaves your lists.`);
+
+    if (input.kind === "TENANT") {
+      // A record removed as a mistake never happened, so it does not count as history.
+      if (await count(tx.select({ id: t.tenancyParties.id }).from(t.tenancyParties)
+        .innerJoin(t.tenancies, eq(t.tenancies.id, t.tenancyParties.tenancyId))
+        .where(and(eq(t.tenancyParties.workspaceId, ws), eq(t.tenancyParties.tenantId, row.id), isNull(t.tenancyParties.deletedAt), ne(t.tenancies.status, "CANCELLED")))))
+        throw stop("been in a room");
+      if (await count(tx.select({ id: t.documents.id }).from(t.documents).where(and(eq(t.documents.workspaceId, ws), eq(t.documents.entityType, "TENANT"), eq(t.documents.entityId, row.id), isNull(t.documents.deletedAt)))))
+        throw stop("documents");
+    } else if (input.kind === "ROOM") {
+      if (await count(tx.select({ id: t.tenancies.id }).from(t.tenancies).where(and(eq(t.tenancies.workspaceId, ws), eq(t.tenancies.unitId, row.id), isNull(t.tenancies.deletedAt)))))
+        throw stop("had a tenant");
+      if (await count(tx.select({ id: t.meters.id }).from(t.meters).where(and(eq(t.meters.workspaceId, ws), eq(t.meters.unitId, row.id), isNull(t.meters.deletedAt)))))
+        throw stop("a meter");
+    } else {
+      if (await count(tx.select({ id: t.tenancies.id }).from(t.tenancies).where(and(eq(t.tenancies.workspaceId, ws), eq(t.tenancies.propertyId, row.id), isNull(t.tenancies.deletedAt)))))
+        throw stop("had a tenant");
+      if (await count(tx.select({ id: t.expenses.id }).from(t.expenses).where(and(eq(t.expenses.workspaceId, ws), eq(t.expenses.propertyId, row.id), isNull(t.expenses.deletedAt)))))
+        throw stop("expenses");
+      if (await count(tx.select({ id: t.meters.id }).from(t.meters).where(and(eq(t.meters.workspaceId, ws), eq(t.meters.propertyId, row.id), isNull(t.meters.deletedAt)))))
+        throw stop("meters");
+      if (await count(tx.select({ id: t.documents.id }).from(t.documents).where(and(eq(t.documents.workspaceId, ws), eq(t.documents.propertyId, row.id), isNull(t.documents.deletedAt)))))
+        throw stop("documents");
+      // Its empty rooms go with it.
+      await tx.update(t.units).set({ deletedAt: sql`now()` as unknown as string, updatedBy: ctx.userId })
+        .where(and(eq(t.units.propertyId, row.id), isNull(t.units.deletedAt)));
+    }
+    const table = TABLE[input.kind];
+    await tx.update(table).set({ deletedAt: sql`now()` as unknown as string, updatedBy: ctx.userId }).where(eq(table.id, row.id));
+    return { entityId: row.id, changes: { kind: input.kind }, result: row.id };
   });
 }
 

@@ -18,6 +18,7 @@ const PAGE = 50;
 const ACTIONS: Record<string, string> = {
   "workspace.create": "Created the workspace", "workspace.update": "Changed settings", "rent.generate": "Added this month's rent",
   "property.create": "Added a property", "property.update": "Edited a property", "unit.create_many": "Added rooms",
+  "thing.put_away": "Put away", "thing.bring_back": "Brought back", "thing.delete": "Deleted for good",
   "tenancy.start": "Added a tenant", "tenancy.add_existing": "Added a tenant already living there", "tenancy.update_terms": "Edited rent terms",
   "tenancy.notice": "Saved a leaving date", "tenancy.notice_withdraw": "Tenant is staying (leaving date removed)", "settlement.finalize": "Moved a tenant out (final bill)", "tenancy.cancel": "Removed a room record added by mistake",
   "tenant.update": "Edited tenant details", "rent.revise": "Changed rent",
@@ -31,7 +32,7 @@ const ACTIONS: Record<string, string> = {
 const GROUPS: Record<string, { label: string; prefixes: string[] }> = {
   money: { label: "Payments and charges", prefixes: ["payment.", "charge.", "credit.", "ledger.", "rent.", "refund.", "recurring."] },
   tenancies: { label: "Tenants", prefixes: ["tenancy.", "tenant.", "settlement."] },
-  properties: { label: "Properties and rooms", prefixes: ["property.", "unit."] },
+  properties: { label: "Properties and rooms", prefixes: ["property.", "unit.", "thing."] },
   meters: { label: "Meters and readings", prefixes: ["meter.", "reading."] },
   expenses: { label: "Expenses", prefixes: ["expense."] },
   documents: { label: "Documents", prefixes: ["document."] },
@@ -44,6 +45,7 @@ const CODES: Record<string, string> = {
   ...PROPERTY_TYPES, ...UNIT_TYPES, ...METER_TYPES, ...DOC_CATEGORIES, ...CREDIT_CATEGORIES, ...CHARGE_CATEGORIES, ...RECURRING_CATEGORIES, ...EXPENSE_CATEGORIES,
   ...METHODS, ...UOMS,
   CHARGE: "Charge", PAYMENT: "Payment", CREDIT: "Discount", REFUND: "Money given back",
+  ROOM: "Room",
   RENT: "Rent and charges", DEPOSIT: "Security deposit",
   TENANT: "The tenant", LANDLORD: "You", TENANCY: "Tenant record", PROPERTY: "Property", EXPENSE: "Expense",
 };
@@ -60,6 +62,7 @@ const FIELD_NAMES: Record<string, string> = {
   openingAdvanceMinor: "paid ahead from before", cycleDay: "rent day", billingStart: "rent charged from", startDate: "moved in",
   account: "given back from", startOn: "first month", endOn: "last month", chargesMade: "months charged now", chargesCancelled: "charges crossed out",
   roundToWholeUnits: "round part-month rent", receiptPrefix: "receipt numbers start with", timeZone: "time zone", displayName: "your name",
+  putAway: "put away", archivedAt: "put away on",
 };
 const HIDDEN = /(^id$|Id$|^reading$|^charge$|^settlement$|^receipts$)/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
@@ -117,8 +120,9 @@ export default async function HistoryPage({ searchParams }: PageProps<"/history"
     if (!id) return null;
     const tid = type === "tenancy" ? id : type === "ledger_entry" ? entryTenancy.get(id) : undefined;
     if (tid) return tenancyTitle(tid) ? [tenancyTitle(tid)!, `/tenancies/${tid}`] : null;
-    if (type === "tenant") { const v = p.views.find((x) => x.people.some((pp) => pp.id === id)); return v ? [v.people.find((pp) => pp.id === id)!.fullName, `/tenancies/${v.tenancy.id}`] : null; }
+    if (type === "tenant") { const x = p.tenants.find((tt) => tt.id === id); return x ? [x.fullName, `/tenants/${x.id}`] : null; }
     if (type === "property") { const x = p.properties.find((pp) => pp.id === id); return x ? [x.name, `/properties/${x.id}`] : null; }
+    if (type === "room") { const u = p.units.find((x) => x.id === id); return u ? [u.label, `/properties/${u.propertyId}`] : null; }
     if (type === "meter") { const m = p.meters.find((x) => x.id === id); return m ? [m.label, `/meters/${m.id}`] : null; }
     if (type === "expense") return ["Expenses", "/expenses"];
     return null;

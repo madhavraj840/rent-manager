@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Version | 0.3 |
+| Version | 0.4 |
 | Status | In use. Every screen must follow it. |
 | Date | 2026-09-20 (0.1: 2026-09-19) |
 | Extends | [09 UI/UX Specification](09_UI_UX_SPECIFICATION.md). It changes no features, data or rules; it only covers how screens explain themselves. |
@@ -101,6 +101,9 @@ Detail never appears above the summary.
 | Rent roll | **Rooms and rent** | Reports |
 | Collections | **Money received** | Reports |
 | Workspace | **Your account** (or the business name) | Headers, history |
+| Archive / Unarchive | **Put away** / **Bring back** | Properties, rooms, tenants |
+| Archived (list) | **Put away** | Tabs, sections |
+| Delete (permanent) | **Delete for good** | Rooms, properties, tenants |
 
 Code, database and spec documents keep their technical names (`tenancy`, `unit`, `void`). These words are only for what people read.
 
@@ -162,6 +165,10 @@ These live in `web/src/components/ui.tsx`, so every page gets the same behaviour
 | Charges added every month (new in 0.3) | A fixed maintenance or parking amount had to be typed every month | A card on the tenant page lists them with "₹500 a month"; the form says which month it starts and that the rent itself does not change; "Stop" asks for the last month | C-4, C-5, C-9 |
 | Rent still to come (new in 0.3) | No way to see what will be charged next | A card listing the next 12 months with rent, each repeating charge and the total, and a line saying nothing there is charged yet | C-5, C-9, C-10 |
 | Give money back (new in 0.3) | Money could only be returned during move-out | A button that names what is held ("Rent paid ahead · ₹3,000 held"), caps the amount, and says what the balance becomes | C-3, C-5, C-9 |
+| Person page (new in 0.4) | A tenant only existed inside one room record; someone who had left, or never had a room, disappeared | `/tenants/{id}`: what they owe, what you hold, every room past and present, contact details, their papers, Call and WhatsApp | C-1, C-7, C-9 |
+| Tenants list (new in 0.4) | Only two tabs, and a person with no room was invisible | Current / Former / Put away; a person with no room is listed as "Not in a room"; the room and the property are separate links | C-1, C-8, C-10 |
+| Same person entered twice (new in 0.4) | Nothing stopped a second copy of the same tenant | Typing a phone already in the list warns "That phone number already belongs to Ramesh" with a button to use the one you have | C-5, C-12 |
+| Put away and delete (new in 0.4) | Old properties, rooms and people stayed in every list for ever, and nothing could be removed | "Put away" hides it and keeps everything; "Delete for good" works only while nothing hangs off the record and asks you to type the word delete; each refusal says why and points at the other one | C-3, C-5, C-11, C-12 |
 | Added by mistake (new in 0.3) | A wrong room record could only be "moved out", which was untrue | A quiet line under the tenant page offers to remove it while no money has been recorded; the form says when to use it and when to use Move out instead | C-5, C-11, C-12 |
 
 ## 5. How to check a new screen

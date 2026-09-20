@@ -18,7 +18,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         </div>
         <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
         <p className="mt-1 text-sm text-fg-2">Enter your email. We email you a sign-in link. No password needed.</p>
-        <LoginForm linkFailed={(await searchParams).link === "failed"} />
+        <LoginForm linkFailed={(await searchParams).link === "failed"} google={process.env.NEXT_PUBLIC_GOOGLE_SIGN_IN === "on"} />
       </div>
     </main>
   );
